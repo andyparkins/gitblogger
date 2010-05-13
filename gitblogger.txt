@@ -1,0 +1,182 @@
+GitBlogger
+==========
+
+I have a blog that I keep in ikiwiki.  That necessitates me using my own
+server.  Also, it necessitates keeping ikiwiki around, which I think is
+overkill for a simply blog.  ikiwiki also takes a long time to update
+the blog with every new entry.
+
+What I have then is a git repository, with a directory "blog/" in it
+(amongst others).  The files in this directory are in markdown syntax
+with ikiwiki directives.  I want to be able to publish them on a google
+blogger blog automatically from within git.
+
+This enables me to use vim to edit, and git to track the articles.  I
+need never go near the web interface (which is awful).  Using git means
+I can write articles in multiple locations and push changes to the
+central repository.
+
+At present, each push triggers ikiwiki to recompile the whole website on
+the server.  What I want is a push to a particular bare git repository
+to effectively copy the blog/ directory to blogger.
+
+The way I want to achieve this is with a post-receive script, which does
+the necessary automatic update of the blog.
+
+
+== Detail
+
+I've got enough of a python script together that I can upload single
+files to blogger.  I'm happy to expand it more to deal with the other
+features.  In the expansion though, I would like to tune it to be tied
+closely to git.
+
+I anticipate that the git config file will gain some extra sections:
+
+--------------
+[gitblogger]
+  username = somename@gmail.com
+  password = secret_gmail_password
+  notesref = notes/gitblogger
+
+[blog "blogName"]
+  blogbranch = master
+  repositorypath = blog/
+  sendasdraft = false
+--------------
+
+The gitblogger section lists the username and password of the account
+that are to be used for blogs.  This username and password is used for
+the first point of contact with the blogger API.  They are used firstly
+to fetch an authentication token (which is only valid for the session).
+That authentication token is then used to query all the blogs for the
+user like this:
+
+------------------
+GET http://www.blogger.com/feeds/default/blogs
+Authorization: GoogleLogin auth=AUTHTOKEN
+GData-Version: 2
+------------------
+
+This returns a list of blogs in XML form, part of that XML includes
+elements like this in each blog record.
+
+----------------------
+<link rel='alternate' type='text/html' href='http://blogName.blogspot.com/' />
+<link rel='http://schemas.google.com/g/2005#post'
+    type='application/atom+xml'
+    href='http://www.blogger.com/feeds/blogID/posts/default' />
+----------------------
+
+That blogName component can be extracted and compared against the git
+config file for a matching "blog" section.  The post URL can be
+extracted from the '#post' link element.
+
+When the post-receive script first starts it will check through the
+config for all blog.blogName.blogbranch entries and will know whether
+the current update includes a change to the blog.blogName.repositorypath
+directory on the blog.blogName.blogbranch branch.  If it decides that
+there has been a change then the above lookup of the post URL should be
+done.
+
+The change could be any of
+
+ - New file within the repositorypath/ directory
+ - Changed file within the repositorypath/ directory
+ - Deleted file within the repositorypath/ directory
+
+A new file will trigger the sending of the article to blogger as a new
+article using a HTTP command like this (with the appropriate data filled
+in).
+
+----------------
+POST http://www.blogger.com/feeds/blogID/posts/default
+Authorization: GoogleLogin auth=AUTHTOKEN
+GData-Version: 2
+
+<entry xmlns='http://www.w3.org/2005/Atom'>
+  <title type='text'>TITLE</title>
+  <published>TIMESTAMP IN RFC3339 FORMAT</published>
+  <content type='xhtml'>
+    <div xmlns="http://www.w3.org/1999/xhtml">
+	  CONTENT IN XHTML
+    </div>
+  </content>
+  <app:control xmlns:app='http://www.w3.org/2007/app'>
+    <app:draft>yes</app:draft>
+  </app:control>
+  <category scheme="http://www.blogger.com/atom/ns#" term="LABEL1" />
+  <category scheme="http://www.blogger.com/atom/ns#" term="LABEL2" />
+</entry>
+----------------
+
+This is sufficient to post an article, however if we want to be able to
+modify it in the future we need to read the response that we get to
+this.  Blogger responds with a "201 CREATED" message and a copy of the
+entry it accepted.  That copy will include various additional elements,
+including an "<id>" element.  This is the one we'll be interested in for
+gitblogger purposes.
+
+----------------
+<entry gd:etag='W/"D0YHRn84eip7ImA9WxZUFk8."'>
+  <id>tag:blogger.com,1999:blog-blogID.post-postID</id>
+</entry>
+----------------
+
+How blogger makes this ID is irrelevant for us, what we need to do is
+store the entire content of this element mapped to the originating
+filename.  I'd like to do that using the git-notes system.
+
+
+== Notes
+
+The post-receive hook is given a list like this:
+
+--------------
+oldrev newrev refname
+--------------
+
+If refname matches a blog branch, then the line should be processed.
+
+First, the additions...
+
+--------------
+$ git ls-tree --full-tree $newrev $(git diff --name-only --diff-filter=A $oldrev $newrev)
+100644 blob 0fcfc847f598170a854f8b4910b597bd35348cda    blog/articleNew.mdwn
+--------------
+
+The article should be uploaded and then the postID received and stored
+as a git-note against the object hash from this command.
+
+Next, the deletions...
+
+--------------
+$ git ls-tree --full-tree $oldrev $(git diff --name-only --diff-filter=D $oldrev $newrev)
+100644 blob 0fcfc847f598170a854f8b4910b597bd35348cda    blog/articleDelete.mdwn
+--------------
+
+The postID can be retreived from the object hash given (note that the
+object has been looked up in $oldrev this time).
+
+Then the hardest, the changes:
+
+--------------
+$ git ls-tree --full-tree $oldrev $(git diff --name-only --diff-filter=M $oldrev $newrev)
+100644 blob 5fb6c733bb488a50aea271ae87b0bcc80a089085    blog/articleChanged.mdwn
+$ git ls-tree --full-tree $newrev $(git diff --name-only --diff-filter=M $oldrev $newrev)
+100644 blob 565a6a9feb6b723e390eac276b4245e820e33246    blog/articleChanged.mdwn
+--------------
+
+If the article is changed, then the postID needs copying from this
+object hash to the equivalent in the new revision:
+
+--------------
+$ git notes copy 5fb6c733bb488a50aea271ae87b0bcc80a089085 565a6a9feb6b723e390eac276b4245e820e33246
+--------------
+
+The article also needs updating on blogger of course.  That is done by
+fetching the old copy and swapping out the XML node with the old content
+for a new XML node with the new content.
+
+
+
