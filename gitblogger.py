@@ -216,6 +216,32 @@ class TGitBlogger:
 						print "gitblogger: Couldn't copy tracking ID, treating article modification as article creation"
 						status[0] = 'A'
 						continue
+					print "gitblogger: Fetching replacement article from repository,",status[1]
+					md_source = subprocess.Popen(["git", "cat-file", "-p", \
+						tohash], stdout=subprocess.PIPE).communicate()[0]
+					print "gitblogger: Converting %d byte article to XHTML" % (len(md_source))
+					# Install plugin handler for different file types
+					# here.  At the moment this is hard coded for
+					# ikiwiki-style markdown
+					try:
+						(atom, meta) = self.ikiwikiToAtom(md_source)
+					except Exception, e:
+						raise TGBError("Couldn't convert article to XHTML: %s" % (e.args[0]) )
+					print "gitblogger: Converted article, \"%s\", is %d bytes, uploading..." % (meta.title, len(atom))
+					if self.options.preview:
+						print atom
+						break
+					# Fetch postid
+					gitproc = subprocess.Popen(["git", "notes", "--ref", self.notesref, \
+						"show", tohash], stdout=subprocess.PIPE)
+					postid = gitproc.communicate()[0].strip()
+					retcode = gitproc.wait()
+					if retcode != 0:
+						print "gitblogger: Lookup failed, can't delete remote blog article without a tracking ID"
+						break
+					print "gitblogger: Modifying remote post,", postid
+					self.modifyPost( atom, meta, postid )
+					print "gitblogger: Post modified"
 
 				elif status[0][0] == 'R':
 					print "gitblogger: Article renamed %s -> %s" % (status[1], status[2])
@@ -343,6 +369,72 @@ class TGitBlogger:
 			self.Blogs[BlogRecord.name] = BlogRecord
 
 		dom.unlink()
+
+	#
+	# Function:		modifyPost
+	# Description:
+	#
+	def modifyPost( self, atom, meta, entryID ):
+		headers = { 'Authorization': 'GoogleLogin auth=%s' % self.authtoken,
+			'GData-Version':'2'
+			}
+
+		# split entryID into PostID and BlogID
+		(blogID, postID) = re.findall('^tag:blogger.com,1999:blog-(\d+)\.post-(\d+)$', entryID )[0]
+		postURL = "http://www.blogger.com/feeds/%s/posts/default/%s" % \
+			(blogID, postID)
+
+		response, content = self.http.request( postURL, 'GET',
+			headers=headers )
+
+		# Check for a redirect
+		while response['status'] == '302':
+			response, content = self.http.request(response['location'], 'GET')
+			if response['status'] == '404':
+				raise TUPError(content)
+
+		if response['status'] != '200':
+			raise TUPError(content)
+
+		# Modify XML to hold new article
+		print "gitblogger: Received %d bytes of article ready to modify" % (len(content))
+
+		try:
+			dom = minidom.parseString( content )
+		except:
+			print content
+			raise
+		entryNode = dom.getElementsByTagName("entry")[0]
+		contentNode = entryNode.getElementsByTagName("content")[0]
+
+		newContent = dom.createElement('content')
+		newContent.setAttribute('type', 'xhtml')
+		newContent.appendChild( dom.createTextNode( atom ) )
+
+		entryNode.replaceChild( newContent, contentNode )
+
+		upload = dom.toxml()
+		dom.unlink()
+
+		print "gitblogger: Created replacement article, %d bytes" % (len(upload))
+
+		headers = { 'Authorization': 'GoogleLogin auth=%s' % self.authtoken,
+			'GData-Version':'2',
+			'Content-Type':'application/atom+xml',
+			}
+		response, content = self.http.request( postURL, 'PUT',
+			headers=headers,body=upload )
+
+		# Check for a redirect
+		while response['status'] == '302':
+			response, content = self.http.request(response['location'], 'GET')
+			if response['status'] == '404':
+				raise TGBError(content)
+
+		if response['status'] != '200':
+			raise TGBError(content)
+
+
 
 	#
 	# Function:		deletePost
