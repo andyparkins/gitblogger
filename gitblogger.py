@@ -20,16 +20,18 @@
 # ----- Includes
 
 # Standard library
-import httplib2, re
 import sys
 import os
 import subprocess
 import locale
 import time
 import datetime
-import markdown
-
+import re
 from optparse import OptionParser
+
+# Additional
+import markdown
+import httplib2
 from xml.dom import minidom
 
 
