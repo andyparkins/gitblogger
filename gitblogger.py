@@ -665,7 +665,7 @@ def main( argv = None ):
 
 	# Simply display TGBErrors
 	except TGBError, e:
-		print >> sys.stderr,  "ERROR:",e.args[0]
+		print >> sys.stderr,  "gitblogger: ERROR:",e.args[0]
 
 
 # ----- Module check
