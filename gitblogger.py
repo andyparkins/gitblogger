@@ -183,7 +183,7 @@ class TGitBlogger:
 					id = self.createPost( atom, meta, blogname )
 					print "gitblogger: Upload complete, article was assigned the id, \"%s\"" % (id)
 					retcode = subprocess.call(["git", "notes", "--ref", self.notesref, \
-						"add", "-m", id, tohash], stdout=subprocess.PIPE)
+						"add", "-f", "-m", id, tohash], stdout=subprocess.PIPE)
 					if retcode != 0:
 						print "gitblogger: Failed to record tracking ID in git repository"
 
@@ -210,7 +210,7 @@ class TGitBlogger:
 					print "gitblogger: Article modified", status[1]
 					print "gitblogger: Copying tracking ID from %s -> %s" % (fromhash, tohash)
 					retcode = subprocess.call(["git", "notes", "--ref", self.notesref, \
-						"copy", fromhash, tohash], \
+						"copy", "-f", fromhash, tohash], \
 						stdout=subprocess.PIPE)
 					if retcode != 0:
 						print "gitblogger: Couldn't copy tracking ID, treating article modification as article creation"
@@ -221,7 +221,7 @@ class TGitBlogger:
 					print "gitblogger: Article renamed %s -> %s" % (status[1], status[2])
 					print "gitblogger: Updating local post ID tracking information"
 					retcode = subprocess.call(["git", "notes", "--ref", self.notesref, \
-						"copy", fromhash, tohash], \
+						"copy", "-f", fromhash, tohash], \
 						stdout=subprocess.PIPE)
 					if retcode != 0:
 						print "gitblogger: Couldn't copy tracking ID, treating article modification as article creation"
