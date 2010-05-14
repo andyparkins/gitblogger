@@ -133,6 +133,20 @@ class TGitBlogger:
 					continue
 				self.sendBlogUpdate( oldrev, newrev, blog )
 
+		elif self.options.mode == 'listblogs':
+			# Establish authentication token
+			print >> sys.stderr, "gitblogger: Logging into Google GData API as", self.options.username
+			self.authtoken = self.authenticate( self.options.username, self.options.password )
+			if self.authtoken is None:
+				raise TGBError("GData authentication failed")
+			print >> sys.stderr, "gitblogger: Success, authtoken is",self.authtoken
+
+			print >> sys.stderr, "gitblogger: Fetching details of blogs owned by", self.options.username
+			self.fetchBlogDetails()
+
+			for blog in self.Blogs.itervalues():
+				print blog.name,blog.id
+
 		elif self.options.mode == 'sync':
 			self.synchroniseTrackingIDs()
 
@@ -807,6 +821,9 @@ class TGitBlogger:
 		parser.add_option( "", "--preview", dest="preview",
 			action="store_const", const="preview",
 			help="preview Atom post")
+		parser.add_option( "", "--listblogs", dest="mode",
+			action="store_const", const="listblogs",
+			help="List the available blogs")
 		parser.add_option( "", "--testmd", dest="mode",
 			action="store_const", const="testmd",
 			help="Test the ikiwiki-to-markdown engine from the supplied filenames")
