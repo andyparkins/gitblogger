@@ -113,9 +113,9 @@ class TGitBlogger:
 					self.sendBlogUpdate( oldrev, newrev, blog )
 
 		elif self.options.mode == 'commandline':
-			oldrev = self.filenames[0]
-			newrev = self.filenames[1]
-			refname = self.filenames[2]
+			oldrev = self.positionalparameters[0]
+			newrev = self.positionalparameters[1]
+			refname = self.positionalparameters[2]
 
 			# refname will be refs/heads/blogbranch
 			refname = refname.split('/',3)
@@ -709,9 +709,9 @@ class TGitBlogger:
 		(self.options, args) = parser.parse_args( self.argv[1:] )
 
 		# Copy the positional arguments into self
-		self.filenames = args
+		self.positionalparameters = args
 
-		if len(self.filenames) == 3:
+		if len(self.positionalparameters) == 3:
 			self.options.mode = "commandline"
 
 	#
