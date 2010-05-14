@@ -3,25 +3,32 @@ GitBlogger
 
 I have a blog that I keep in ikiwiki.  That necessitates me using my own
 server.  Also, it necessitates keeping ikiwiki around, which I think is
-overkill for a simply blog.  ikiwiki also takes a long time to update
-the blog with every new entry.
+overkill for a simple blog.  ikiwiki also takes a long time to update
+the blog with every new entry, as it is recompiling a large number of
+entries to generate the RSS feed and blog web page.
 
 What I have then is a git repository, with a directory "blog/" in it
 (amongst others).  The files in this directory are in markdown syntax
 with ikiwiki directives.  I want to be able to publish them on a google
-blogger blog automatically from within git.
+blogger blog automatically as the articles are added or changed within
+the git repository.  I'll do this by designating one repository
+(probably bare) as the auto-publisher, and installing gitblogger as the
+post-receive hook, then whenever I push to that one from my working
+copy, gitblogger will automatically make the matching changes on the
+blog itself.
 
 This enables me to use vim to edit, and git to track the articles.  I
-need never go near the web interface (which is awful).  Using git means
-I can write articles in multiple locations and push changes to the
-central repository.
+need never go near the web interface of blogger (which is awful).  While
+some people seem to find writing in a web interface acceptable, I much
+prefer having my normal full-featured text editor available.
 
-At present, each push triggers ikiwiki to recompile the whole website on
-the server.  What I want is a push to a particular bare git repository
-to effectively copy the blog/ directory to blogger.
-
-The way I want to achieve this is with a post-receive script, which does
-the necessary automatic update of the blog.
+Using git means I can write articles in multiple locations and push
+changes to the central repository.  I can use all of git's excellent
+merging and branch management facilities to ensure that I never lose an
+article, nor a change to an article.  If so motivated, I suppose I could
+have all the change descriptions automatically appended to an article
+before it is published, letting people know when updates have happened
+(I'm not so motivated though).
 
 
 == Detail
@@ -46,7 +53,7 @@ I anticipate that the git config file will gain some extra sections:
 --------------
 
 The gitblogger section lists the username and password of the account
-that are to be used for blogs.  This username and password is used for
+that is to be used for blogs.  This username and password is used for
 the first point of contact with the blogger API.  They are used firstly
 to fetch an authentication token (which is only valid for the session).
 That authentication token is then used to query all the blogs for the
@@ -73,11 +80,11 @@ config file for a matching "blog" section.  The post URL can be
 extracted from the '#post' link element.
 
 When the post-receive script first starts it will check through the
-config for all blog.blogName.blogbranch entries and will know whether
-the current update includes a change to the blog.blogName.repositorypath
-directory on the blog.blogName.blogbranch branch.  If it decides that
-there has been a change then the above lookup of the post URL should be
-done.
+config for all blog.blogName.blogbranch entries and will then know
+whether the current update includes a change to the
+blog.blogName.repositorypath directory on the blog.blogName.blogbranch
+branch.  If it decides that there has been a change then the above
+lookup of the post URL should be done.
 
 The change could be any of
 
@@ -141,8 +148,7 @@ If refname matches a blog branch, then the line should be processed.
 First, the additions...
 
 --------------
-$ git ls-tree --full-tree $newrev $(git diff --name-only --diff-filter=A $oldrev $newrev)
-100644 blob 0fcfc847f598170a854f8b4910b597bd35348cda    blog/articleNew.mdwn
+$ git diff-tree -r -M -C --relative=repositoryPath oldrev newrev
 --------------
 
 The article should be uploaded and then the postID received and stored
@@ -150,22 +156,10 @@ as a git-note against the object hash from this command.
 
 Next, the deletions...
 
---------------
-$ git ls-tree --full-tree $oldrev $(git diff --name-only --diff-filter=D $oldrev $newrev)
-100644 blob 0fcfc847f598170a854f8b4910b597bd35348cda    blog/articleDelete.mdwn
---------------
-
 The postID can be retreived from the object hash given (note that the
 object has been looked up in $oldrev this time).
 
 Then the hardest, the changes:
-
---------------
-$ git ls-tree --full-tree $oldrev $(git diff --name-only --diff-filter=M $oldrev $newrev)
-100644 blob 5fb6c733bb488a50aea271ae87b0bcc80a089085    blog/articleChanged.mdwn
-$ git ls-tree --full-tree $newrev $(git diff --name-only --diff-filter=M $oldrev $newrev)
-100644 blob 565a6a9feb6b723e390eac276b4245e820e33246    blog/articleChanged.mdwn
---------------
 
 If the article is changed, then the postID needs copying from this
 object hash to the equivalent in the new revision:
