@@ -669,7 +669,7 @@ class TGitBlogger:
 		if self.options.verbose:
 			print >> sys.stderr,  "----- Transmitting to blog"
 
-		print >> sys.stderr,  "Uploading entry \"%s\", size %d" % (meta.title, fsize)
+		print >> sys.stderr, "gitblogger: Uploading entry \"%s\", size %d" % (meta.title, fsize)
 
 		headers = { 'Authorization': 'GoogleLogin auth=%s' % self.authtoken,
 			'GData-Version':'2',
