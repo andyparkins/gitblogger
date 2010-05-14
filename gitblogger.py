@@ -100,11 +100,11 @@ class TGitBlogger:
 				line = sys.stdin.readline().strip()
 				if not line:
 					break
-				# 309e0dcfb0d92a7b746e85e48377b2cc2a9025cb 12f575ad888d05919463b9ae501978eb79c091b7 refs/heads/master
 				line = line.split(' ')
 				if len(line) < 3:
 					continue
 				(oldrev, newrev, refname) = tuple(line)
+				print >> sys.stderr, "gitblogger: %s %s -> %s" % (refname, oldrev, newrev)
 
 				# refname will be refs/heads/blogbranch
 				refname = refname.split('/',3)
