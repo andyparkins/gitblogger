@@ -84,7 +84,7 @@ class TGitBlogger:
 
 		if len(self.options.username) == 0 or \
 			len(self.options.password) == 0:
-			print "gitblogger: No gitblogger settings found in git config, aborting"
+			print >> sys.stderr, "gitblogger: No gitblogger settings found in git config, aborting"
 			return
 
 		if self.options.verbose:
@@ -154,30 +154,30 @@ class TGitBlogger:
 			raise TGBError("No blog names supplied on command line")
 
 		# Establish authentication token
-		print "gitblogger: Logging into Google GData API as", self.options.username
+		print >> sys.stderr, "gitblogger: Logging into Google GData API as", self.options.username
 		self.authtoken = self.authenticate( self.options.username, self.options.password )
 		if self.authtoken is None:
 			raise TGBError("GData authentication failed")
-		print "gitblogger: Success, authtoken is",self.authtoken
+		print >> sys.stderr, "gitblogger: Success, authtoken is",self.authtoken
 
-		print "gitblogger: Fetching details of blogs owned by", self.options.username
+		print >> sys.stderr, "gitblogger: Fetching details of blogs owned by", self.options.username
 		self.fetchBlogDetails()
 
 		for blogname in self.positionalparameters:
 			if not self.gitblogs.has_key( blogname ):
-				print "gitblogger: Skipping unknown blog", blogname
+				print >> sys.stderr, "gitblogger: Skipping unknown blog", blogname
 				continue
-			print "gitblogger: Syncing tracking IDs for blog,", blogname
+			print >> sys.stderr, "gitblogger: Syncing tracking IDs for blog,", blogname
 			blog = self.gitblogs[blogname]
 
-			print "gitblogger: Looking up local post titles in repository directory",os.path.normpath(blog['repositorypath']) + os.sep
+			print >> sys.stderr, "gitblogger: Looking up local post titles in repository directory",os.path.normpath(blog['repositorypath']) + os.sep
 			repoarticles = subprocess.Popen(["git", "ls-tree", "--full-tree", \
 					blog['blogbranch'], \
 					os.path.normpath(blog['repositorypath']) + os.sep ], \
 					stdout=subprocess.PIPE).communicate()[0].strip()
 			repoarticles = repoarticles.split('\n')
 
-			print "gitblogger: Extracting titles from '[[!meta title]]' directives",
+			print >> sys.stderr, "gitblogger: Extracting titles from '[[!meta title]]' directives",
 			LocalObject = dict()
 			for treerecord in repoarticles:
 				treerecord = treerecord.split(' ')
@@ -190,7 +190,7 @@ class TGitBlogger:
 
 				if meta.title is None:
 					print
-					print "gitblogger: No title found in",article[1]
+					print >> sys.stderr, "gitblogger: No title found in",article[1]
 					print
 					continue
 
@@ -198,11 +198,11 @@ class TGitBlogger:
 				sys.stdout.write('.')
 
 			print
-			print "gitblogger: %d titles extracted from repository-stored articles" % ( len(LocalObject) )
+			print >> sys.stderr, "gitblogger: %d titles extracted from repository-stored articles" % ( len(LocalObject) )
 
-			print "gitblogger: Fetching post details for", blogname
+			print >> sys.stderr, "gitblogger: Fetching post details for", blogname
 			self.fetchPostDetails( blogname )
-			print "gitblogger: Found %d remote blog posts" % ( len(self.Posts) )
+			print >> sys.stderr, "gitblogger: Found %d remote blog posts" % ( len(self.Posts) )
 			notecount = 0
 			for post in self.Posts.itervalues():
 				if not LocalObject.has_key(post.title):
@@ -210,9 +210,9 @@ class TGitBlogger:
 				retcode = subprocess.call(["git", "notes", "--ref", self.notesref, \
 					"add", "-f", "-m", post.id, LocalObject[post.title]], stdout=subprocess.PIPE)
 				if retcode != 0:
-					print "gitblogger: Failed to record tracking ID in git repository"
+					print >> sys.stderr, "gitblogger: Failed to record tracking ID in git repository"
 				notecount = notecount + 1
-			print "gitblogger: Sync complete, %d tracking IDs written or rewritten" % (notecount)
+			print >> sys.stderr, "gitblogger: Sync complete, %d tracking IDs written or rewritten" % (notecount)
 
 
 
@@ -235,13 +235,13 @@ class TGitBlogger:
 			return
 
 		# Establish authentication token
-		print "gitblogger: Logging into Google GData API as", self.options.username
+		print >> sys.stderr, "gitblogger: Logging into Google GData API as", self.options.username
 		self.authtoken = self.authenticate( self.options.username, self.options.password )
 		if self.authtoken is None:
 			raise TGBError("GData authentication failed")
-		print "gitblogger: Success, authtoken is",self.authtoken
+		print >> sys.stderr, "gitblogger: Success, authtoken is",self.authtoken
 
-		print "gitblogger: Fetching details of blogs owned by", self.options.username
+		print >> sys.stderr, "gitblogger: Fetching details of blogs owned by", self.options.username
 		self.fetchBlogDetails()
 
 		for change in difftree:
@@ -251,13 +251,13 @@ class TGitBlogger:
 			fromhash = change[2]
 			tohash = change[3]
 
-			print "gitblogger: ---",status[1]
+			print >> sys.stderr, "gitblogger: ---",status[1]
 			while True: 
 				if status[0][0] == 'A':
-					print "gitblogger: Fetching new article from repository,",status[1]
+					print >> sys.stderr, "gitblogger: Fetching new article from repository,",status[1]
 					md_source = subprocess.Popen(["git", "cat-file", "-p", \
 						tohash], stdout=subprocess.PIPE).communicate()[0]
-					print "gitblogger: Converting %d byte article to XHTML" % (len(md_source))
+					print >> sys.stderr, "gitblogger: Converting %d byte article to XHTML" % (len(md_source))
 					# Install plugin handler for different file types
 					# here.  At the moment this is hard coded for
 					# ikiwiki-style markdown
@@ -265,50 +265,50 @@ class TGitBlogger:
 						(atom, meta) = self.ikiwikiToAtom(md_source)
 					except Exception, e:
 						raise TGBError("Couldn't convert article to XHTML: %s" % (e.args[0]) )
-					print "gitblogger: Converted article, \"%s\", is %d bytes, uploading..." % (meta.title, len(atom))
+					print >> sys.stderr, "gitblogger: Converted article, \"%s\", is %d bytes, uploading..." % (meta.title, len(atom))
 					if self.options.preview:
 						print atom
 						break
 					id = self.createPost( atom, meta, blogname )
-					print "gitblogger: Upload complete, article was assigned the id, \"%s\"" % (id)
+					print >> sys.stderr, "gitblogger: Upload complete, article was assigned the id, \"%s\"" % (id)
 					retcode = subprocess.call(["git", "notes", "--ref", self.notesref, \
 						"add", "-f", "-m", id, tohash], stdout=subprocess.PIPE)
 					if retcode != 0:
-						print "gitblogger: Failed to record tracking ID in git repository"
+						print >> sys.stderr, "gitblogger: Failed to record tracking ID in git repository"
 
 				elif status[0][0] == 'C':
-					print "gitblogger: Article copied %s -> %s" % (status[1], status[2])
+					print >> sys.stderr, "gitblogger: Article copied %s -> %s" % (status[1], status[2])
 
 				elif status[0][0] == 'D':
-					print "gitblogger: Article deleted", status[1]
-					print "gitblogger: Looking up corresponding blog post tracking ID"
+					print >> sys.stderr, "gitblogger: Article deleted", status[1]
+					print >> sys.stderr, "gitblogger: Looking up corresponding blog post tracking ID"
 					gitproc = subprocess.Popen(["git", "notes", "--ref", self.notesref, \
 						"show", fromhash], stdout=subprocess.PIPE)
 					postid = gitproc.communicate()[0].strip()
 					retcode = gitproc.wait()
 					if retcode != 0:
-						print "gitblogger: Lookup failed, can't delete remote blog article without a tracking ID"
+						print >> sys.stderr, "gitblogger: Lookup failed, can't delete remote blog article without a tracking ID"
 						break
-					print "gitblogger: Removing remote posting with tracking ID,",postid
+					print >> sys.stderr, "gitblogger: Removing remote posting with tracking ID,",postid
 					self.deletePost( postid )
-					print "gitblogger: Removing local copy of tracking ID"
+					print >> sys.stderr, "gitblogger: Removing local copy of tracking ID"
 					retcode = subprocess.call(["git", "notes", "--ref", self.notesref, \
 						"remove", fromhash], stdout=subprocess.PIPE)
 
 				elif status[0][0] == 'M':
-					print "gitblogger: Article modified", status[1]
-					print "gitblogger: Copying tracking ID from %s -> %s" % (fromhash, tohash)
+					print >> sys.stderr, "gitblogger: Article modified", status[1]
+					print >> sys.stderr, "gitblogger: Copying tracking ID from %s -> %s" % (fromhash, tohash)
 					retcode = subprocess.call(["git", "notes", "--ref", self.notesref, \
 						"copy", "-f", fromhash, tohash], \
 						stdout=subprocess.PIPE)
 					if retcode != 0:
-						print "gitblogger: Couldn't copy tracking ID, treating article modification as article creation"
+						print >> sys.stderr, "gitblogger: Couldn't copy tracking ID, treating article modification as article creation"
 						status[0] = 'A'
 						continue
-					print "gitblogger: Fetching replacement article from repository,",status[1]
+					print >> sys.stderr, "gitblogger: Fetching replacement article from repository,",status[1]
 					md_source = subprocess.Popen(["git", "cat-file", "-p", \
 						tohash], stdout=subprocess.PIPE).communicate()[0]
-					print "gitblogger: Converting %d byte article to XHTML" % (len(md_source))
+					print >> sys.stderr, "gitblogger: Converting %d byte article to XHTML" % (len(md_source))
 					# Install plugin handler for different file types
 					# here.  At the moment this is hard coded for
 					# ikiwiki-style markdown
@@ -316,7 +316,7 @@ class TGitBlogger:
 						(atom, meta) = self.ikiwikiToAtom(md_source)
 					except Exception, e:
 						raise TGBError("Couldn't convert article to XHTML: %s" % (e.args[0]) )
-					print "gitblogger: Converted article, \"%s\", is %d bytes, uploading..." % (meta.title, len(atom))
+					print >> sys.stderr, "gitblogger: Converted article, \"%s\", is %d bytes, uploading..." % (meta.title, len(atom))
 					if self.options.preview:
 						print atom
 						break
@@ -326,29 +326,29 @@ class TGitBlogger:
 					postid = gitproc.communicate()[0].strip()
 					retcode = gitproc.wait()
 					if retcode != 0:
-						print "gitblogger: Lookup failed, can't delete remote blog article without a tracking ID"
+						print >> sys.stderr, "gitblogger: Lookup failed, can't delete remote blog article without a tracking ID"
 						break
-					print "gitblogger: Modifying remote post,", postid
+					print >> sys.stderr, "gitblogger: Modifying remote post,", postid
 					self.modifyPost( atom, meta, postid )
-					print "gitblogger: Post modified"
+					print >> sys.stderr, "gitblogger: Post modified"
 
 				elif status[0][0] == 'R':
-					print "gitblogger: Article renamed %s -> %s" % (status[1], status[2])
-					print "gitblogger: Updating local post ID tracking information"
+					print >> sys.stderr, "gitblogger: Article renamed %s -> %s" % (status[1], status[2])
+					print >> sys.stderr, "gitblogger: Updating local post ID tracking information"
 					retcode = subprocess.call(["git", "notes", "--ref", self.notesref, \
 						"copy", "-f", fromhash, tohash], \
 						stdout=subprocess.PIPE)
 					if retcode != 0:
-						print "gitblogger: Couldn't copy tracking ID, treating article modification as article creation"
+						print >> sys.stderr, "gitblogger: Couldn't copy tracking ID, treating article modification as article creation"
 						status = ['A', status[2]]
 						continue
 					if status[0][1:] != '100':
-						print "gitblogger: Converting rename with change to a modify for",status[1]
+						print >> sys.stderr, "gitblogger: Converting rename with change to a modify for",status[1]
 						status = ['M', status[2]]
 						continue
 
 				elif status[0][0] == 'T':
-					print "gitblogger: Ignoring change of file type for", status[1]
+					print >> sys.stderr, "gitblogger: Ignoring change of file type for", status[1]
 
 				elif status[0][0] == 'U':
 					raise TGBError("'Unmerged' change code from git-diff-tree")
@@ -486,7 +486,7 @@ class TGitBlogger:
 			raise TUPError(content)
 
 		# Modify XML to hold new article
-		print "gitblogger: Received %d bytes of article ready to modify" % (len(content))
+		print >> sys.stderr, "gitblogger: Received %d bytes of article ready to modify" % (len(content))
 
 		try:
 			dom = minidom.parseString( content )
@@ -505,7 +505,7 @@ class TGitBlogger:
 		upload = dom.toxml()
 		dom.unlink()
 
-		print "gitblogger: Created replacement article, %d bytes" % (len(upload))
+		print >> sys.stderr, "gitblogger: Created replacement article, %d bytes" % (len(upload))
 
 		headers = { 'Authorization': 'GoogleLogin auth=%s' % self.authtoken,
 			'GData-Version':'2',
