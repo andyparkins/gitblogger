@@ -90,6 +90,7 @@ class TGitBlogger:
 		self.http = httplib2.Http()
 
 		if self.options.mode == 'post-receive':
+			print >> sys.stderr, "gitblogger: Running in git post-receive hook mode; reading changes from stdin..."
 			while True:
 				line = sys.stdin.readline().strip()
 				if not line:
