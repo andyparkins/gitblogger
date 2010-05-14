@@ -518,18 +518,15 @@ class TGitBlogger:
 		return id
 
 	#
-	# Function:		ikiwikiToAtom
+	# Function:		ikiwikiToMarkdown
 	# Description:
 	#
-	def ikiwikiToAtom( self, rawsource ):
+	def ikiwikiToMarkdown( self, rawsource ):
 		ikiwiki = unicode(rawsource, "utf-8")
 
 		# Extract all the ikiwiki directives
 		directives = re.findall(u'\[\[!(.*)\]\]\n', ikiwiki )
 		mdwn = re.sub(u'\[\[!(.*)\]\]\n','', ikiwiki ).strip()
-
-		# Convert from mardown syntax to HTML
-		html = markdown.markdown(mdwn)
 
 		# Extract meta data from ikiwiki directives
 		meta = Record()
@@ -546,6 +543,18 @@ class TGitBlogger:
 			x = re.findall('tag (.*)', directive)
 			if len(x) > 0:
 				meta.categories.extend(x[0].split(' '))
+
+		return (mdwn, meta)
+
+	#
+	# Function:		ikiwikiToAtom
+	# Description:
+	#
+	def ikiwikiToAtom( self, rawsource ):
+		(mdwn, meta) = self.ikiwikiToMarkdown( rawsource )
+
+		# Convert from markdown syntax to HTML
+		html = markdown.markdown(mdwn)
 
 		# Convert date to atom format
 		if meta.date is not None:
