@@ -82,6 +82,11 @@ class TGitBlogger:
 		self.readConfigFile()
 		self.readCommandLine()
 
+		if len(self.options.username) == 0 or \
+			len(self.options.password) == 0:
+			print "gitblogger: No gitblogger settings found in git config, aborting"
+			return
+
 		if self.options.verbose:
 			print >> sys.stderr,  " --- Verbose mode active"
 			print >> sys.stderr,  self
