@@ -447,10 +447,15 @@ class TGitBlogger:
 		for blog in entryNodes:
 			BlogRecord = Record()
 			BlogRecord.title = self.XMLText(blog.getElementsByTagName("title")[0])
+			BlogRecord.id = self.XMLText(blog.getElementsByTagName("id")[0])
 			links = blog.getElementsByTagName("link")
 			for link in links:
+				if link.attributes['rel'].value == 'self':
+					BlogRecord.SelfURL = link.attributes['href'].value
 				if link.attributes['rel'].value == 'alternate':
 					BlogRecord.URL = link.attributes['href'].value
+				if link.attributes['rel'].value == 'http://schemas.google.com/g/2005#feed':
+					BlogRecord.FeedURL = link.attributes['href'].value
 				if link.attributes['rel'].value == 'http://schemas.google.com/g/2005#post':
 					BlogRecord.PostURL = link.attributes['href'].value
 #			BlogRecord.id = re.findall('http://www.blogger.com/feeds/()/posts',BlogRecord.PostURL)[0]
