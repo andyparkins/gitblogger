@@ -748,6 +748,9 @@ class TGitBlogger:
 		self.options.password = subprocess.Popen(["git", "config", "--get", "gitblogger.password"], stdout=subprocess.PIPE).communicate()[0].strip()
 		self.notesref = subprocess.Popen(["git", "config", "--get", "gitblogger.notesref"], stdout=subprocess.PIPE).communicate()[0].strip()
 
+		if len(self.notesref) == 0:
+			self.notesref = 'notes/gitblogger'
+
 		lines = subprocess.Popen(["git", "config", "--get-regexp", "^blog\."], stdout=subprocess.PIPE).communicate()[0].split('\n')
 
 		self.gitblogs = dict()
@@ -764,6 +767,11 @@ class TGitBlogger:
 				continue
 			if not self.gitblogs.has_key(key[1]):
 				self.gitblogs[key[1]] = dict()
+				# Defaults
+				self.gitblogs[key[1]]['blogbranch'] = 'master'
+				self.gitblogs[key[1]]['repositorypath'] = ''
+				self.gitblogs[key[1]]['sendasdraft'] = False
+
 			self.gitblogs[key[1]][key[2]] = value
 
 
