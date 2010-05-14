@@ -128,6 +128,16 @@ class TGitBlogger:
 					continue
 				self.sendBlogUpdate( oldrev, newrev, blog )
 
+		elif self.options.mode == 'testmd':
+			for filename in self.positionalparameters:
+				print "---",filename
+				f = open(filename, mode='rb')
+				ikiwiki = f.read()
+				(mdwn, meta) = self.ikiwikiToMarkdown( ikiwiki )
+				print repr(meta.__dict__)
+				print mdwn
+
+
 	#
 	# Function:		sendBlogUpdate
 	# Description:
@@ -714,6 +724,9 @@ class TGitBlogger:
 		parser.add_option( "", "--preview", dest="preview",
 			action="store_const", const="preview",
 			help="preview Atom post")
+		parser.add_option( "", "--testmd", dest="mode",
+			action="store_const", const="testmd",
+			help="Test the ikiwiki-to-markdown engine from the supplied filenames")
 		parser.set_defaults(mode=self.options.mode, preview=False)
 
 		# Run the parser
