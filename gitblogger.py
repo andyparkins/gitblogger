@@ -525,8 +525,9 @@ class TGitBlogger:
 		ikiwiki = unicode(rawsource, "utf-8")
 
 		# Extract all the ikiwiki directives
-		directives = re.findall(u'\[\[!(.*)\]\]\n', ikiwiki )
-		mdwn = re.sub(u'\[\[!(.*)\]\]\n','', ikiwiki ).strip()
+		pattern = re.compile(r'\[\[!(.*?)\]\]', re.DOTALL )
+		directives = pattern.findall(ikiwiki)
+		mdwn = pattern.sub('', ikiwiki).strip()
 
 		# Extract meta data from ikiwiki directives
 		meta = Record()
@@ -534,6 +535,7 @@ class TGitBlogger:
 		meta.date = None
 		meta.categories = []
 		for directive in directives:
+			directive = directive.replace("\n",' ')
 			x = re.findall('meta title="(.*)"', directive)
 			if len(x) > 0:
 				meta.title = x[0];
