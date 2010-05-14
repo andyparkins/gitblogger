@@ -663,7 +663,7 @@ class TGitBlogger:
 	# Function:		ikiwikiToAtom
 	# Description:
 	#
-	def ikiwikiToAtom( self, rawsource ):
+	def ikiwikiToAtom( self, rawsource, exportpostid = None ):
 		(mdwn, meta) = self.ikiwikiToMarkdown( rawsource )
 
 		# Convert from markdown syntax to HTML
@@ -693,7 +693,8 @@ class TGitBlogger:
 </app:control>
 """
 
-		atom = """<entry xmlns='http://www.w3.org/2005/Atom'>
+		if exportpostid is None:
+			atom = """<entry xmlns='http://www.w3.org/2005/Atom'>
   <title type='text'>%s</title>
   %s
 <content type='xhtml'>
@@ -704,8 +705,20 @@ class TGitBlogger:
 %s
 </entry>
 """ % (meta.title,meta.date,html,extras)
-
-#		print >> sys.stderr,  atom
+		else:
+			extras = extras + "<thr:total>0</thr:total>"
+			atom = """<entry xmlns='http://www.w3.org/2005/Atom'>
+  <id>%s</id>
+  <title type='text'>%s</title>
+  %s
+<content type='xhtml'>
+<div xmlns="http://www.w3.org/1999/xhtml">
+%s
+</div>
+</content>
+%s
+</entry>
+""" % (exportpostid, meta.title, meta.date, html, extras)
 
 		return (atom,meta)
 
