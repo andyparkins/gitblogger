@@ -159,6 +159,85 @@ class TGitBlogger:
 				print repr(meta.__dict__)
 				print mdwn.encode('ascii', 'ignore')
 
+		elif self.options.mode == 'bootstrap':
+			# Establish authentication token
+			print >> sys.stderr, "gitblogger: Logging into Google GData API as", self.options.username
+			self.authtoken = self.authenticate( self.options.username, self.options.password )
+			if self.authtoken is None:
+				raise TGBError("GData authentication failed")
+			print >> sys.stderr, "gitblogger: Success, authtoken is",self.authtoken
+
+			print >> sys.stderr, "gitblogger: Fetching details of blogs owned by", self.options.username
+			self.fetchBlogDetails()
+
+			for blog in self.positionalparameters:
+				print >> sys.stderr, "---",blog
+				self.generateImportXML( blog )
+			print >> sys.stderr, "gitblogger: After uploading this XML to blogger, you",
+			print >> sys.stderr, "should run --sync mode to download the tracking IDs"
+
+	#
+	# Function:		generateImportXML
+	# Description:
+	#
+	def generateImportXML( self, blogname ):
+
+		if not self.gitblogs.has_key( blogname ):
+			print >> sys.stderr, "gitblogger: Skipping unknown blog", blogname
+			return
+
+		print >> sys.stderr, "gitblogger: Generating importable XML for blog,", blogname
+		blog = self.gitblogs[blogname]
+
+		print >> sys.stderr, "gitblogger: Looking up local post titles in repository directory",os.path.normpath(blog['repositorypath']) + os.sep
+		repoarticles = subprocess.Popen(["git", "ls-tree", "--full-tree", \
+				blog['blogbranch'], \
+				os.path.normpath(blog['repositorypath']) + os.sep ], \
+				stdout=subprocess.PIPE).communicate()[0].strip()
+		repoarticles = repoarticles.split('\n')
+
+		BloggerBlog = self.Blogs[blogname]
+
+		print """<?xml version='1.0' encoding='UTF-8'?>
+<?xml-stylesheet href="http://www.blogger.com/styles/atom.css" type="text/css"?>
+<feed xmlns='http://www.w3.org/2005/Atom' xmlns:openSearch='http://a9.com/-/spec/opensearchrss/1.0/' xmlns:georss='http://www.georss.org/georss' xmlns:gd='http://schemas.google.com/g/2005' xmlns:thr='http://purl.org/syndication/thread/1.0'>
+<id>%s</id>
+<link rel='http://schemas.google.com/g/2005#feed' type='application/atom+xml' href='%s'/>
+<link rel='self' type='application/atom+xml' href='%s'/>
+<link rel='http://schemas.google.com/g/2005#post' type='application/atom+xml' href='%s'/>
+<link rel='alternate' type='text/html' href='%s'/>
+<generator version='7.00' uri='http://www.blogger.com'>Blogger</generator>""" % \
+			(BloggerBlog.id, BloggerBlog.FeedURL, BloggerBlog.SelfURL, BloggerBlog.PostURL, BloggerBlog.URL )
+
+		print >> sys.stderr, "gitblogger: Extracting titles from '[[!meta title]]' directives",
+		LocalObject = dict()
+		for treerecord in repoarticles:
+			treerecord = treerecord.split(' ')
+			article = treerecord[2].split('\t')
+			if not article[1].endswith('.mdwn'):
+				continue
+			md_source = subprocess.Popen(["git", "cat-file", "-p", \
+					article[0]], stdout=subprocess.PIPE).communicate()[0]
+			(mdwn, meta) = self.ikiwikiToAtom( md_source, 'Does it matter what goes here' )
+
+			if meta.title is None:
+				print >> sys.stderr, ""
+				print >> sys.stderr, "gitblogger: No title found in",article[1]
+				print >> sys.stderr, ""
+				continue
+
+			print mdwn.encode('utf-8')
+
+			LocalObject[meta.title] = article[0]
+			sys.stderr.write('.')
+
+		print >> sys.stderr, ""
+		print >> sys.stderr, "gitblogger: %d titles extracted from repository-stored articles" % ( len(LocalObject) )
+
+		# Close opening tag
+		print "</feed>"
+
+
 	#
 	# Function:		synchroniseTrackingIDs
 	# Description:
@@ -843,6 +922,9 @@ class TGitBlogger:
 		parser.add_option( "", "--sync", dest="mode",
 			action="store_const", const="sync",
 			help="Use article titles to look up post IDs")
+		parser.add_option( "", "--bootstrap", dest="mode",
+			action="store_const", const="bootstrap",
+			help="Generate a blogger-compatible XML file to mass upload a blog")
 		parser.set_defaults(mode=self.options.mode, preview=False)
 
 		# Run the parser
