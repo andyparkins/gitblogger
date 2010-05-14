@@ -143,7 +143,7 @@ class TGitBlogger:
 				ikiwiki = f.read()
 				(mdwn, meta) = self.ikiwikiToMarkdown( ikiwiki )
 				print repr(meta.__dict__)
-				print mdwn
+				print mdwn.encode('ascii', 'ignore')
 
 	#
 	# Function:		synchroniseTrackingIDs
