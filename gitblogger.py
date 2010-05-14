@@ -838,7 +838,7 @@ class TGitBlogger:
 		# Copy the positional arguments into self
 		self.positionalparameters = args
 
-		if len(self.positionalparameters) == 3:
+		if self.options.mode == 'post-receive' and len(self.positionalparameters) == 3:
 			self.options.mode = "commandline"
 
 	#
