@@ -709,18 +709,6 @@ class TGitBlogger:
 		parser.add_option( "-p", "--password", dest="password",
 			metavar="PASSWORD", type='string', default=self.options.password,
 			help="the password of your google account [default:NOT SHOWN]")
-#		parser.add_option( "-r", "--resize", dest="targetsize",
-#			metavar="WIDTH", type='int', default=self.options.targetsize,
-#			help="the width the image should be in picasa [default:%default]")
-#		parser.add_option( "", "--list", dest="mode",
-#			action="store_const", const="list",
-#			help="list blogs")
-#		parser.add_option( "", "--listposts", dest="mode",
-#			action="store_const", const="listposts",
-#			help="list posts")
-#		parser.add_option( "", "--deleteall", dest="mode",
-#			action="store_const", const="deleteall",
-#			help="delete all posts")
 		parser.add_option( "", "--preview", dest="preview",
 			action="store_const", const="preview",
 			help="preview Atom post")
