@@ -128,6 +128,9 @@ class TGitBlogger:
 					continue
 				self.sendBlogUpdate( oldrev, newrev, blog )
 
+		elif self.options.mode == 'sync':
+			self.synchroniseTrackingIDs()
+
 		elif self.options.mode == 'testmd':
 			for filename in self.positionalparameters:
 				print "---",filename
@@ -136,6 +139,76 @@ class TGitBlogger:
 				(mdwn, meta) = self.ikiwikiToMarkdown( ikiwiki )
 				print repr(meta.__dict__)
 				print mdwn
+
+	#
+	# Function:		synchroniseTrackingIDs
+	# Description:
+	#
+	def synchroniseTrackingIDs( self ):
+		if len(self.positionalparameters) == 0:
+			raise TGBError("No blog names supplied on command line")
+
+		# Establish authentication token
+		print "gitblogger: Logging into Google GData API as", self.options.username
+		self.authtoken = self.authenticate( self.options.username, self.options.password )
+		if self.authtoken is None:
+			raise TGBError("GData authentication failed")
+		print "gitblogger: Success, authtoken is",self.authtoken
+
+		print "gitblogger: Fetching details of blogs owned by", self.options.username
+		self.fetchBlogDetails()
+
+		for blogname in self.positionalparameters:
+			if not self.gitblogs.has_key( blogname ):
+				print "gitblogger: Skipping unknown blog", blogname
+				continue
+			print "gitblogger: Syncing tracking IDs for blog,", blogname
+			blog = self.gitblogs[blogname]
+
+			print "gitblogger: Looking up local post titles in repository directory",os.path.normpath(blog['repositorypath']) + os.sep
+			repoarticles = subprocess.Popen(["git", "ls-tree", "--full-tree", \
+					blog['blogbranch'], \
+					os.path.normpath(blog['repositorypath']) + os.sep ], \
+					stdout=subprocess.PIPE).communicate()[0].strip()
+			repoarticles = repoarticles.split('\n')
+
+			print "gitblogger: Extracting titles from '[[!meta title]]' directives",
+			LocalObject = dict()
+			for treerecord in repoarticles:
+				treerecord = treerecord.split(' ')
+				article = treerecord[2].split('\t')
+				if not article[1].endswith('.mdwn'):
+					continue
+				md_source = subprocess.Popen(["git", "cat-file", "-p", \
+						article[0]], stdout=subprocess.PIPE).communicate()[0]
+				(mdwn, meta) = self.ikiwikiToMarkdown( md_source )
+
+				if meta.title is None:
+					print
+					print "gitblogger: No title found in",article[1]
+					print
+					continue
+
+				LocalObject[meta.title] = article[0]
+				sys.stdout.write('.')
+
+			print
+			print "gitblogger: %d titles extracted from repository-stored articles" % ( len(LocalObject) )
+
+			print "gitblogger: Fetching post details for", blogname
+			self.fetchPostDetails( blogname )
+			print "gitblogger: Found %d remote blog posts" % ( len(self.Posts) )
+			notecount = 0
+			for post in self.Posts.itervalues():
+				if not LocalObject.has_key(post.title):
+					continue
+				retcode = subprocess.call(["git", "notes", "--ref", self.notesref, \
+					"add", "-f", "-m", post.id, LocalObject[post.title]], stdout=subprocess.PIPE)
+				if retcode != 0:
+					print "gitblogger: Failed to record tracking ID in git repository"
+				notecount = notecount + 1
+			print "gitblogger: Sync complete, %d tracking IDs written or rewritten" % (notecount)
+
 
 
 	#
@@ -715,6 +788,9 @@ class TGitBlogger:
 		parser.add_option( "", "--testmd", dest="mode",
 			action="store_const", const="testmd",
 			help="Test the ikiwiki-to-markdown engine from the supplied filenames")
+		parser.add_option( "", "--sync", dest="mode",
+			action="store_const", const="sync",
+			help="Use article titles to look up post IDs")
 		parser.set_defaults(mode=self.options.mode, preview=False)
 
 		# Run the parser
