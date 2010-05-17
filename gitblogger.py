@@ -628,6 +628,10 @@ class TGitBlogger:
 			categoryNode.setAttribute( 'term', tag )
 			entryNode.appendChild( categoryNode )
 
+		titleNode = entryNode.getElementsByTagName('title')[0]
+		newTitle = dom.createTextNode( meta.title )
+		titleNode.replaceChild( newTitle, titleNode.firstChild )
+
 		# TODO: Remove the old 'published', replacing with new
 
 		upload = dom.toxml().encode('utf-8')
