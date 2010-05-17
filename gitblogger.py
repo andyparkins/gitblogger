@@ -632,7 +632,11 @@ class TGitBlogger:
 		newTitle = dom.createTextNode( meta.title )
 		titleNode.replaceChild( newTitle, titleNode.firstChild )
 
-		# TODO: Remove the old 'published', replacing with new
+		if meta.date is not None:
+			publishedNode = entryNode.getElementsByTagName('published')[0]
+			if publishedNode is not None:
+				newPublished = dom.createTextNode( meta.date )
+				publishedNode.replaceChild( newPublished, publishedNode.firstChild )
 
 		upload = dom.toxml().encode('utf-8')
 		dom.unlink()
@@ -783,6 +787,7 @@ class TGitBlogger:
 		html = markdown.markdown(mdwn)
 
 		# Convert date to atom format
+		atomdate = None
 		if meta.date is not None:
 			try:
 				x = datetime.datetime.strptime(meta.date,"%Y-%m-%d %H:%M:%S")
@@ -791,7 +796,8 @@ class TGitBlogger:
 					x = datetime.datetime.strptime(meta.date,"%Y-%m-%d %H:%M")
 				except ValueError:
 					x = datetime.datetime.strptime(meta.date,"%Y-%m-%d")
-			meta.date = '<published>' + x.strftime('%Y-%m-%dT%H:%M:%S%z') + '</published>'
+			meta.date = x.strftime('%Y-%m-%dT%H:%M:%S%z')
+			atomdate = '<published>' + meta.date + '</published>'
 
 		# --- Add atom wrapper
 		extras = "<category scheme='http://schemas.google.com/g/2005#kind' term='http://schemas.google.com/blogger/2008/kind#post'/>\n"
@@ -817,7 +823,7 @@ class TGitBlogger:
 </content>
 %s
 </entry>
-""" % (meta.title,meta.date,html,extras)
+""" % (meta.title, atomdate, html, extras)
 		else:
 			extras = extras + "<thr:total>0</thr:total>"
 			atom = """<entry xmlns='http://www.w3.org/2005/Atom'>
