@@ -698,7 +698,7 @@ class TGitBlogger:
 			'Content-Length':'%s' % fsize }
 
 		response, content = self.http.request( blog.PostURL, 'POST',
-			headers=headers,body=body )
+			headers=headers, body=body )
 
 		# Check for a redirect
 		while response['status'] == '302':
