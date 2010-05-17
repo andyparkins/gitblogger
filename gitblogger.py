@@ -774,6 +774,16 @@ class TGitBlogger:
 			if len(x) > 0:
 				meta.categories.extend(x[0].split(' '))
 
+		if meta.date is not None:
+			try:
+				x = datetime.datetime.strptime(meta.date,"%Y-%m-%d %H:%M:%S")
+			except ValueError:
+				try:
+					x = datetime.datetime.strptime(meta.date,"%Y-%m-%d %H:%M")
+				except ValueError:
+					x = datetime.datetime.strptime(meta.date,"%Y-%m-%d")
+			meta.date = x.strftime('%Y-%m-%dT%H:%M:%S%z')
+
 		return (mdwn, meta)
 
 	#
@@ -789,14 +799,6 @@ class TGitBlogger:
 		# Convert date to atom format
 		atomdate = None
 		if meta.date is not None:
-			try:
-				x = datetime.datetime.strptime(meta.date,"%Y-%m-%d %H:%M:%S")
-			except ValueError:
-				try:
-					x = datetime.datetime.strptime(meta.date,"%Y-%m-%d %H:%M")
-				except ValueError:
-					x = datetime.datetime.strptime(meta.date,"%Y-%m-%d")
-			meta.date = x.strftime('%Y-%m-%dT%H:%M:%S%z')
 			atomdate = '<published>' + meta.date + '</published>'
 
 		# --- Add atom wrapper
