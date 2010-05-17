@@ -406,12 +406,12 @@ class TGitBlogger:
 					# here.  At the moment this is hard coded for
 					# ikiwiki-style markdown
 					try:
-						(atom, meta) = self.ikiwikiToAtom(md_source)
+						(mdwn, meta) = self.ikiwikiToMarkdown(md_source)
 					except Exception, e:
 						raise TGBError("Couldn't convert article to XHTML: %s" % (e.args[0]) )
-					print >> sys.stderr, "gitblogger: Converted article, \"%s\", is %d bytes, uploading..." % (meta.title, len(atom))
+					print >> sys.stderr, "gitblogger: Converted article, \"%s\", is %d bytes, uploading..." % (meta.title, len(mdwn))
 					if self.options.preview:
-						print atom
+						print mdwn
 						break
 					# Fetch postid
 					gitproc = subprocess.Popen(["git", "notes", "--ref", self.notesref, \
@@ -422,7 +422,7 @@ class TGitBlogger:
 						print >> sys.stderr, "gitblogger: Lookup failed, can't delete remote blog article without a tracking ID"
 						break
 					print >> sys.stderr, "gitblogger: Modifying remote post,", postid
-					self.modifyPost( atom, meta, postid )
+					self.modifyPost( mdwn, meta, postid )
 					print >> sys.stderr, "gitblogger: Post modified"
 
 				elif status[0][0] == 'R':
@@ -561,7 +561,7 @@ class TGitBlogger:
 	# Function:		modifyPost
 	# Description:
 	#
-	def modifyPost( self, atom, meta, entryID ):
+	def modifyPost( self, mdwn, meta, entryID ):
 		headers = { 'Authorization': 'GoogleLogin auth=%s' % self.authtoken,
 			'GData-Version':'2'
 			}
@@ -594,11 +594,32 @@ class TGitBlogger:
 		entryNode = dom.getElementsByTagName("entry")[0]
 		contentNode = entryNode.getElementsByTagName("content")[0]
 
+		# Make a new XML tree from the replacement article, we have to
+		# supply a root node as XML requires that the whole document be
+		# wrapped in something; it actually doesn't matter what as we're
+		# going to strip the container off anyway
+		x = "<content>" + markdown.markdown(mdwn) + "</content>"
+		tempParsingDom = minidom.parseString( x )
+
+		# Import the new content into the existing article's DOM,
+		# preserving the XML tree.
+		newArticle = dom.importNode( tempParsingDom.childNodes[0], True )
+		# Import finished, we can do away with the temporary DOM
+		tempParsingDom.unlink()
+
+		# The new article is now attached to the old DOM.  We still have
+		# to put it somewhere in the tree, we do that by making a new
+		# container element for the content and swapping the new element
+		# for the old element
 		newContent = dom.createElement('content')
 		newContent.setAttribute('type', 'xhtml')
-		newContent.appendChild( dom.createTextNode( atom ) )
-
+		# attach the article to the new content node
+		newContent.appendChild( newArticle )
+		# Replace the old content node with the new content node
 		entryNode.replaceChild( newContent, contentNode )
+
+		# TODO: Remove the old 'categories', replacing with new
+		# TODO: Remove the old 'published', replacing with new
 
 		upload = dom.toxml()
 		dom.unlink()
