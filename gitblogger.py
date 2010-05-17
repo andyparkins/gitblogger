@@ -618,7 +618,16 @@ class TGitBlogger:
 		# Replace the old content node with the new content node
 		entryNode.replaceChild( newContent, contentNode )
 
-		# TODO: Remove the old 'categories', replacing with new
+		categoryNodes = entryNode.getElementsByTagName('catgegory')
+		for categoryNode in categoryNodes:
+			if categoryNode.getAttribute( 'scheme' ) == "http://www.blogger.com/atom/ns#":
+				entryNode.removeChild( categoryNode )
+		for tag in meta.categories:
+			categoryNode = dom.createElement('category')
+			categoryNode.setAttribute( 'scheme', "http://www.blogger.com/atom/ns#" )
+			categoryNode.setAttribute( 'term', tag )
+			entryNode.appendChild( categoryNode )
+
 		# TODO: Remove the old 'published', replacing with new
 
 		upload = dom.toxml()
