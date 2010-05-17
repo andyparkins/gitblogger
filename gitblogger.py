@@ -599,7 +599,7 @@ class TGitBlogger:
 		# wrapped in something; it actually doesn't matter what as we're
 		# going to strip the container off anyway
 		x = "<content>" + markdown.markdown(mdwn) + "</content>"
-		tempParsingDom = minidom.parseString( x )
+		tempParsingDom = minidom.parseString( x.encode('utf-8') )
 
 		# Import the new content into the existing article's DOM,
 		# preserving the XML tree.
@@ -630,7 +630,7 @@ class TGitBlogger:
 
 		# TODO: Remove the old 'published', replacing with new
 
-		upload = dom.toxml()
+		upload = dom.toxml().encode('utf-8')
 		dom.unlink()
 
 		print >> sys.stderr, "gitblogger: Created replacement article, %d bytes" % (len(upload))
