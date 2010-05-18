@@ -25,7 +25,6 @@ import os
 import subprocess
 import locale
 import time
-import datetime
 import re
 from optparse import OptionParser
 
@@ -776,13 +775,19 @@ class TGitBlogger:
 
 		if meta.date is not None:
 			try:
-				x = datetime.datetime.strptime(meta.date,"%Y-%m-%d %H:%M:%S")
+				localtime_tuple = time.strptime( meta.date, "%Y-%m-%d %H:%M:%S")
 			except ValueError:
 				try:
-					x = datetime.datetime.strptime(meta.date,"%Y-%m-%d %H:%M")
+					localtime_tuple = time.strptime( meta.date, "%Y-%m-%d %H:%M")
 				except ValueError:
-					x = datetime.datetime.strptime(meta.date,"%Y-%m-%d")
-			meta.date = x.strftime('%Y-%m-%dT%H:%M:%S%z')
+					localtime_tuple = time.strptime( meta.date, "%Y-%m-%d")
+			# Now we have a structure in local time, we convert to epoch
+			# time
+			absolute_epoch = time.mktime(localtime_tuple)
+			# Convert to UTC
+			utc_tuple = time.gmtime(absolute_epoch)
+			# Instruct blogger that this is a UTC time
+			meta.date = time.strftime('%Y-%m-%dT%H:%M:%S+0000', utc_tuple )
 
 		return (mdwn, meta)
 
