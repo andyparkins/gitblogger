@@ -787,7 +787,7 @@ class TGitBlogger:
 			# Convert to UTC
 			utc_tuple = time.gmtime(absolute_epoch)
 			# Instruct blogger that this is a UTC time
-			meta.date = time.strftime('%Y-%m-%dT%H:%M:%S+0000', utc_tuple )
+			meta.date = time.strftime('%Y-%m-%dT%H:%M:%S.000+00:00', utc_tuple )
 
 		return (mdwn, meta)
 
