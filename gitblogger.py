@@ -631,11 +631,11 @@ class TGitBlogger:
 		newTitle = dom.createTextNode( meta.title )
 		titleNode.replaceChild( newTitle, titleNode.firstChild )
 
-#		if meta.date is not None:
-#			publishedNode = entryNode.getElementsByTagName('published')[0]
-#			if publishedNode is not None:
-#				newPublished = dom.createTextNode( meta.date )
-#				publishedNode.replaceChild( newPublished, publishedNode.firstChild )
+		if meta.date is not None:
+			publishedNode = entryNode.getElementsByTagName('published')[0]
+			if publishedNode is not None:
+				newPublished = dom.createTextNode( meta.date )
+				publishedNode.replaceChild( newPublished, publishedNode.firstChild )
 
 		upload = dom.toxml().encode('utf-8')
 		dom.unlink()
