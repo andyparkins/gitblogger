@@ -1,0 +1,417 @@
+[[!meta title="Gitblogger User Guide"]]
+[[!meta date="2010-05-20 13:00"]]
+[[!tag gitblogger guide]]
+
+
+
+Prerequisites
+=============
+
+This is the command I ran to get the python libraries used by
+gitblogger on Debian:
+
+    $ apt-get install python-httplib2 python-markdown python-xml
+
+Obviously you'll need git, but gitblogger requires version 1.7 or above
+as it uses the git-notes feature.
+
+
+Introduction
+============
+
+Have you ever wanted to write a blog but hate using web interfaces?
+Have you ever wanted to write your blog in easy-to-read, easy-to-write
+markdown syntax?  Have you ever wanted to keep all changes to your
+blog in your favourite version control system, git?  If you've
+answered "yes" to all these very specific questions, then this is
+the very script for you.
+
+This script is intended to be installed as a post-receive hook in a
+central (so probably bare) git repository.  It looks at every incoming
+change to the repository and checks for changes to files in a given
+directory on a given branch.  Those files are assumed to be in
+markdown format (with a little bit of ikiwiki directives thrown in for
+the meta information).  Each file is treated as one article and is
+transmitted onwards to a given blogger account after being converted
+to HTML.
+
+
+Getting Started
+===============
+
+Before you start you'll need a blog setup at `www.blogger.com`.  That
+implies a google account and password, which you'll need to supply to
+gitblogger.
+
+Then, set up a repository to act as the "master" repository.
+
+    $ GIT_DIR=myblog.git git init --bare
+
+Then, either copy this script into `myblog.git/hooks/post-receive`, or
+(as I do), write a small script as `myblog.git/hooks/post-receive`:
+
+    #!/bin/sh
+    run-any-additional-post-receives
+    exec python /usr/local/lib/gitblogger/gitblogger.py $*
+
+Using this method will allow you to integrate any automatic email
+generators you might be using without altering the gitblogger script,
+and to keep one master copy of gitblogger, rather than copying it into
+multiple repositories.
+
+Now configure gitblogger in this master repository:
+
+    $ git config gitblogger.username youremailaddress@gmail.com
+    $ git config gitblogger.password SECRET_PASSWORD
+    $ git config blog.NAMEOFBLOG.repositorypath blog/
+
+`NAMEOFBLOG` is the short name of the blog as it appears in the URL for
+your blog.
+
+    http://NAMEOFBLOG.blogspot.com
+
+It's worth noting that your password is stored plaintext in this file,
+so at the very least
+
+    $ chmod 600 config
+
+Alternatively, you can store the password in the post-receive hook using
+the `--password` option to gitblogger; again, remember to make it
+owner-readable-only.  I'm afraid I couldn't come up with a way of not
+storing your password plain text.  Suggestions welcome.
+
+Now clone this repository into a working directory
+
+    $ mkdir ~/gitblogger; cd ~/gitblogger
+    $ git clone /path/to/master/repository/myblog.git
+    $ cd myblog
+
+Make a subdirectory matching that that you gave to the
+`blog.NAMEOFBLOG.repositorypath` configuration option:
+
+    $ mkdir blog; cd blog
+
+Now write your article, and add it to the repository.
+
+    $ cat > review-gitblogger.mdwn
+    [[!meta title="Review of Gitblogger"]]
+    [[!meta date="2010-05-20 12:00"]]
+    Gitblogger useful but not easy to set up.
+    [[!tag review]]
+    $ git add review-gitblogger.mdwn
+    $ git commit -m "gitblogger review"
+
+Finally, you transmit it to the remote repository, as normal, but the
+`post-receive` hook will run gitblogger to send it onwards to your blog.
+
+    $ git push
+    Counting objects: 6, done.
+    Delta compression using up to 4 threads.
+    Compressing objects: 100% (4/4), done.
+    Writing objects: 100% (4/4), 3.53 KiB, done.
+    Total 4 (delta 2), reused 0 (delta 0)
+    remote: gitblogger: Running in git post-receive hook mode; reading changes from stdin...
+    remote: gitblogger: refs/heads/master e14a03b69ed8d9ab09391247c0d25db36efe506c -> e20275c1bfe412b592872e1f1035fb153d39c912
+    remote: gitblogger: Logging into Google GData API as youremailaddress@gmail.com
+    remote: gitblogger: Success, authtoken is RIDICULOUSLYLONGSTRINGOFDIGITS
+    remote: gitblogger: Fetching details of blogs owned by youremailaddress@gmail.com
+    remote: gitblogger: --- review-gitblogger.mdwn
+    remote: gitblogger: Fetching new article from repository, review-gitblogger.mdwn
+    remote: gitblogger: Converting 200 byte article to XHTML
+    remote: gitblogger: Converted article, "Review of Gitblogger", is 755 bytes, uploading..
+    remote: gitblogger: Uploading entry "Review of Gitblogger", size 755
+    remote: gitblogger: Upload complete, article was assigned the id, "tag:blogger.com,1999:blog-123456789012345678.post-1234567890123456789"
+    To /path/to/master/repository/myblog.git
+       e14a03b..e20275c  master -> master
+
+
+Configuration
+=============
+
+Here is an example configuration with all the options that gitblogger
+supports:
+
+    [gitblogger]
+      username = somename@gmail.com
+      password = secret_gmail_password
+      notesref = notes/gitblogger
+    
+    [blog "BLOGNAME"]
+      blogbranch = master
+      repositorypath = blog/
+
+Most of these we've already seen:
+
+ - `gitblogger.username`, `gitblogger.password`  
+   This is the name and password of the google account to use to log in.
+   gitblogger retrieves the blogs for this username using the
+   `http://www.blogger.com/feeds/default/blogs` URL after logging in.
+ - `gitblogger.notesref`  
+   gitblogger makes uses git-notes to store the blogger assigned post ID
+   locally, so that it can send modifications to an article to the
+   correct place.  This option sets the ref that gitblogger uses, it
+   defaults to notes/gitblogger, and there is no real reason to change
+   it.  It's different from the git default reference for notes, so
+   shouldn't interfere with any other use you want to put notes to.
+ - `blog.BLOGNAME.blogbranch`  
+   This is the name of the repository branch that is going to receive
+   updates for the `BLOGNAME` blog.
+ - `blog.BLOGNAME.repositorypath`  
+   This is the name of the directory within `blogbranch`
+ 
+You can create as many `blog` sections as you want; thus enabling you to
+keep different blogs in different branches, or even different
+directories within the same branch.  Any modifications to
+directories not listed in a `blog` section will be ignored, so you may
+safely keep draft articles, or any other supporting materials you might
+use in the same branch.
+
+
+Article Syntax
+==============
+
+At present, gitblogger only supports ikiwiki-enhanced markdown syntax
+for its articles.  It will only transmit files that end in ".mdwn",
+files with any other extension will be ignored.
+
+
+Extras
+======
+
+Gitblogger can be run directly from the command line, in different
+modes.  These may be more or less useful to you.  Most of them are there
+to help me debug.
+
+  - `--draft`  
+    Any article uploaded gets the draft flag set on it
+  - `--login`, `--password`
+    Supply the login details on the command line rather than reading it
+	from the git configuration file.
+  - `--preview`  
+    Output the Atom XML that is being sent before sending it.
+  - `--listblogs`  
+    Login to `blogger.com` and download the blogs available to that
+	user.  This is a good way of testing your login credentials and blog
+	availability without needing to submit an article.
+  - `--testmd`  
+    Test the markdown meta data extraction.  This checks that the
+	ikiwiki directive parser is correctly separating the title, keywords
+	and date from the raw markdown content.  Note that it doesn't
+	convert the markdown to HTML.
+  - `--sync`  
+    If things go horribly wrong, you can force a reset of all the
+	locally stored post IDs using this option.  Gitblogger will use the
+	article title as the key to match the remote article with the local
+	file.  Note that if you have multiple articles with the same title,
+	this option is not safe.  If you do not, then running it will do
+	very little harm.  If Gitblogger is working correctly, then you
+	should never need this option.
+  - `--bootstrap`  
+	Bootstrap mode provides a way of uploading a large quantity of
+	articles to a blog in one go.  Google place a rate limit on how many
+	you can upload in one day (I don't know what it is exactly).
+	In normal usage it probably won't matter, however if you were
+	starting a blog from scratch with a large number of existing
+	articles (as I was), this option generates blogger-compatible XML
+	output that can be given to the "Import Blog" function in your
+	blogger dashboard.  If you were feeling very brave you could delete
+	every article on your blog, then use this function to upload them
+	all again.  Note that if you did so you would lose all comments and
+	any articles that weren't created using gitblogger.
+
+One final extra.  You can run gitblogger in non-`post-receive` hook mode
+by supplying the parameters on a command line.  This can come in useful
+if blogger is ever broken and you need to retry an upload that failed.
+For example, to send the most recent modification again:
+
+    $ gitblogger.py HEAD^ HEAD ref/heads/master
+
+Be careful doing this, it's not impossible to end up with a single
+article posted twice.  Fortunately, as all the articles are stored in
+your local git repository, it's not the end of the world when things go
+wrong at the blogger end.  You git repository is the master copy.
+
+
+History
+=======
+
+This script developed because I was using ikiwiki to manage my blog.
+ikiwiki works in a similar way to gitblogger: it runs a post-receive
+hook to compile a new version of a static website.  While ikiwiki is
+good at what it does; I was finding it too much for my purposes.  I
+didn't want a whole web site, or a wiki.  In fact, I didn't even want to
+keep my blog on my own server.
+
+What I wanted was a way of using vim to write my articles, of keeping
+them in a git repository (I keep everything in a git repository), and
+not having to write HTML (HTML is fine, but it's not very pleasant to
+read or write native).  The git repository part was particularly
+important, because I wanted to be able to write and update articles from
+any of multiple machines, without risking losing changes.  Git is great
+at this.
+
+I already had a google account, so I created a blog, found the GData API
+documentation and wrote gitblogger.  I had already written a lot of
+articles using the ikiwiki extensions to markdown that allowed me to
+specify article titles, publish dates and tags, so I kept that format in
+gitblogger's markdown support.
+
+Gitblogger was written for my own use only, so it's not particularly
+pretty, nor very flexible.  There is certainly scope for making it
+possible to use a language other than markdown, and to use blogs other
+than blogger.  However, I don't care enough to do that -- my itch is
+scratched.  I do plan to tidy it up a lot though, it could do with being
+a lot more object oriented with the git parts separate from the blogger
+parts separate from the text-formatting parts.  One thing that it would
+be nice to support would be uploading of images.  Blogger stores its
+images in the google account's picasaweb area, and I have code that will
+upload an image.  However, I don't know how to make the link between the
+two that blogger uses.
+
+
+
+How It Works
+============
+
+The username and password is converted to an authentication token, which
+is used for every subsequent transaction.  In principle it would be
+possible to cache this token on disk, but I decided that that was a
+security risk.
+
+    POST https://www.google.com/accounts/ClientLogin
+	Content-Type: application/x-www-form-urlencoded
+
+	Email=XXXXXXXXX&Passwd=YYYYYYYYY&service=blogger&accountType=GOOGLE
+
+The authentication token is used to query all the blogs for the
+user like this:
+
+    GET http://www.blogger.com/feeds/default/blogs
+    Authorization: GoogleLogin auth=AUTHTOKEN
+    GData-Version: 2
+
+This returns a list of blogs in XML form, part of that XML includes
+elements like this in each blog record.
+
+    <link rel='alternate' type='text/html' href='http://blogName.blogspot.com/' />
+    <link rel='http://schemas.google.com/g/2005#post'
+        type='application/atom+xml'
+        href='http://www.blogger.com/feeds/blogID/posts/default' />
+
+That `blogName` component in the `alternate` link can be extracted and
+compared against the git config file to find the matching `blog`
+section.  The post URL can be extracted from the '#post' link element.
+
+When the `post-receive` script first starts it checks through the
+config for all `blog.blogName.blogbranch` entries and will then know
+whether the current update includes a change to the
+`blog.blogName.repositorypath` directory on the `blog.blogName.blogbranch`
+branch.  If it decides that there has been a change then the above
+lookup of the post URL should be done.
+
+The change could be any of
+
+ - New file within the `repositorypath/` directory
+ - Changed file within the `repositorypath/` directory
+ - Deleted file within the `repositorypath/` directory
+
+A new file will trigger the sending of the article to blogger as a new
+article using a HTTP command like this (with the appropriate data filled
+in).
+
+    POST http://www.blogger.com/feeds/blogID/posts/default
+    Authorization: GoogleLogin auth=AUTHTOKEN
+    GData-Version: 2
+    
+    <entry xmlns='http://www.w3.org/2005/Atom'>
+      <title type='text'>TITLE</title>
+      <published>TIMESTAMP IN RFC3339 FORMAT</published>
+      <content type='xhtml'>
+        <div xmlns="http://www.w3.org/1999/xhtml">
+    	  CONTENT IN XHTML
+        </div>
+      </content>
+      <app:control xmlns:app='http://www.w3.org/2007/app'>
+        <app:draft>yes</app:draft>
+      </app:control>
+      <category scheme="http://www.blogger.com/atom/ns#" term="LABEL1" />
+      <category scheme="http://www.blogger.com/atom/ns#" term="LABEL2" />
+    </entry>
+
+This is sufficient to post an article, however if we want to be able to
+modify it in the future we need to read the response that we get to
+this.  Blogger responds with a "201 CREATED" message and a copy of the
+entry it accepted.  That copy will include various additional elements,
+including an `<id>` element.  This is the one we'll be interested in for
+gitblogger purposes.
+
+    <entry gd:etag='W/"D0YHRn84eip7ImA9WxZUFk8."'>
+      <id>tag:blogger.com,1999:blog-blogID.post-postID</id>
+    </entry>
+
+How blogger makes this ID is irrelevant for us, what we need to do is
+store the entire content of this element mapped to the originating
+file.  This is done using the git-notes system.
+
+git
+---
+
+The post-receive hook is given a list like this:
+
+    oldrev newrev refname
+    oldrev newrev refname
+    oldrev newrev refname
+
+If refname matches a blog branch, then the line should be processed.
+
+    $ git diff-tree -r -M -C --relative=repositoryPath oldrev newrev
+    :000000 100644 000000000... 230aeae76... A     new-article.mdwn
+    :100644 100644 8ec583778... fc65365a4... M     changed-article.mdwn
+    :100644 000000 e7269ce08... 000000000... D     deleted-article.mdwn
+
+You can see that git very conveniently supplies the status code for each
+change, so we can simply iterate through each line, running a different
+routine depending on whether the code is `A`, `M`, or `D` (as it happens
+we'll also deal with copies and renames, but you can check the code for
+how they are handled).
+
+For an addition, we upload the article as described above, extracting
+the postID from the response.  That postID is stored like this:
+
+    git notes --ref notes/gitblogger \
+	    add -f -m "tag:blogger.com,1999:blog-blogID.post-postID" 230aeae76...
+
+This is stored against the `new-article-mdwn` object hash.  That means
+that in the future, when it is modified (`M` mode), we will be able to
+look up the postID again (`git notes show`).  Once we've got the post
+ID, we need to copy it to the after-modification object hash.  blogger
+uses the same ID throughout the lifetime of the article, so a copy is
+fine, but using this method means that other blogging systems (which
+might assign a new ID) can be supported by simply writing whatever
+unique information it gives back after the modify command.
+
+    git notes --ref notes/gitblogger \
+        copy -f 8ec583778... fc65365a4...
+
+The article also needs updating on blogger of course.  That is done by
+fetching the old copy and swapping out the XML node with the old content
+for a new XML node with the new content.  This is convoluted but simple
+with python's minidom.
+
+Finally, deletions.  Exactly the same idea, but this time we use the `remove`
+command to git-notes.  Of course, before we do we need look up the
+postID and delete the article on blogger.  That is done with an `HTTP
+DELETE` sent to the #post URL we obtained from the blog list.
+
+One final point is that we can never read the articles themselves from
+disk, we are a post-receive hook running in a (potentially) bare
+repository.  Even if the repository were not bare we could not got
+poking around in the working directory for the article source, the user
+might not have committed the entire file at once.  Instead we get git to
+give us the content of the article.
+
+    git cat-file -p 230aeae76...   
+
+With the object hash we obtained from the `diff-tree` command.
+
+

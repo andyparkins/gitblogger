@@ -13,8 +13,6 @@
 # Notes
 #   http://code.google.com/apis/blogger/docs/2.0/developers_guide_protocol.html
 #
-#   apt-get install python-httplib2 python-markdown python-xml
-#
 # ----------------------------------------------------------------------------
 
 # ----- Includes
