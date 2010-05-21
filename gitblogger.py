@@ -765,7 +765,7 @@ class TGitBlogger:
 
 		# Workaround bug in python markdown module
 		# http://www.freewisdom.org/projects/python-markdown/Tickets/000059
-		mdwn = re.sub(r'\[(.+?)\]: *<(.+)>', r'[\1]: \2:', mdwn, re.MULTILINE )
+		mdwn = re.sub(r'\[(.+?)\]: *<(.+)>', r'[\1]: \2', mdwn, re.MULTILINE )
 
 		# Extract meta data from ikiwiki directives
 		meta = Record()
