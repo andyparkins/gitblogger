@@ -612,8 +612,8 @@ class TGitBlogger:
 		# supply a root node as XML requires that the whole document be
 		# wrapped in something; it actually doesn't matter what as we're
 		# going to strip the container off anyway
-		x = "<content>" + markdown.markdown(mdwn) + "</content>"
-		tempParsingDom = minidom.parseString(x)
+		x = u"<content>" + markdown.markdown(mdwn) + u"</content>"
+		tempParsingDom = minidom.parseString( x.encode('utf-8') )
 
 		# Import the new content into the existing article's DOM,
 		# preserving the XML tree.
