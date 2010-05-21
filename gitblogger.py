@@ -163,11 +163,11 @@ class TGitBlogger:
 		elif self.options.mode == 'testmd':
 			for filename in self.positionalparameters:
 				print "---",filename
-				f = open(filename, mode='rb')
+				f = open(filename, mode='rb', encoding='utf-8')
 				ikiwiki = f.read()
 				(mdwn, meta) = self.ikiwikiToMarkdown( ikiwiki )
 				print repr(meta.__dict__)
-				print mdwn.encode('utf-8')
+				print mdwn
 
 		elif self.options.mode == 'bootstrap':
 			# Establish authentication token
@@ -228,6 +228,7 @@ class TGitBlogger:
 				continue
 			md_source = subprocess.Popen(["git", "cat-file", "-p", \
 					article[0]], stdout=subprocess.PIPE).communicate()[0]
+			md_source = unicode( md_source, 'utf-8' )
 			(mdwn, meta) = self.ikiwikiToAtom( md_source, 'Does it matter what goes here' )
 
 			if meta.title is None:
@@ -236,7 +237,7 @@ class TGitBlogger:
 				print >> sys.stderr, ""
 				continue
 
-			print mdwn.encode('utf-8')
+			print mdwn
 
 			LocalObject[meta.title] = article[0]
 			sys.stderr.write('.')
@@ -289,6 +290,7 @@ class TGitBlogger:
 					continue
 				md_source = subprocess.Popen(["git", "cat-file", "-p", \
 						article[0]], stdout=subprocess.PIPE).communicate()[0]
+				md_source = unicode( md_source, 'utf-8' )
 				(mdwn, meta) = self.ikiwikiToMarkdown( md_source )
 
 				if meta.title is None:
@@ -360,6 +362,7 @@ class TGitBlogger:
 					print >> sys.stderr, "gitblogger: Fetching new article from repository,",status[1]
 					md_source = subprocess.Popen(["git", "cat-file", "-p", \
 						tohash], stdout=subprocess.PIPE).communicate()[0]
+					md_source = unicode( md_source, 'utf-8' )
 					print >> sys.stderr, "gitblogger: Converting %d byte article to XHTML" % (len(md_source))
 					# Install plugin handler for different file types
 					# here.  At the moment this is hard coded for
@@ -411,6 +414,7 @@ class TGitBlogger:
 					print >> sys.stderr, "gitblogger: Fetching replacement article from repository,",status[1]
 					md_source = subprocess.Popen(["git", "cat-file", "-p", \
 						tohash], stdout=subprocess.PIPE).communicate()[0]
+					md_source = unicode( md_source, 'utf-8' )
 					print >> sys.stderr, "gitblogger: Converting %d byte article to XHTML" % (len(md_source))
 					# Install plugin handler for different file types
 					# here.  At the moment this is hard coded for
@@ -609,7 +613,7 @@ class TGitBlogger:
 		# wrapped in something; it actually doesn't matter what as we're
 		# going to strip the container off anyway
 		x = "<content>" + markdown.markdown(mdwn) + "</content>"
-		tempParsingDom = minidom.parseString( x.encode('utf-8') )
+		tempParsingDom = minidom.parseString(x)
 
 		# Import the new content into the existing article's DOM,
 		# preserving the XML tree.
@@ -648,7 +652,7 @@ class TGitBlogger:
 				newPublished = dom.createTextNode( meta.date )
 				publishedNode.replaceChild( newPublished, publishedNode.firstChild )
 
-		upload = dom.toxml().encode('utf-8')
+		upload = dom.toxml()
 		dom.unlink()
 
 		print >> sys.stderr, "gitblogger: Created replacement article, %d bytes" % (len(upload))
@@ -658,7 +662,7 @@ class TGitBlogger:
 			'Content-Type':'application/atom+xml',
 			}
 		response, content = self.http.request( postURL, 'PUT',
-			headers=headers,body=upload )
+			headers=headers,body=upload.encode('utf-8') )
 
 		# Check for a redirect
 		while response['status'] == '302':
@@ -725,7 +729,7 @@ class TGitBlogger:
 			'Content-Length':'%s' % fsize }
 
 		response, content = self.http.request( blog.PostURL, 'POST',
-			headers=headers, body=body )
+			headers=headers, body=body.encode('utf-8') )
 
 		# Check for a redirect
 		while response['status'] == '302':
@@ -755,8 +759,7 @@ class TGitBlogger:
 	# Function:		ikiwikiToMarkdown
 	# Description:
 	#
-	def ikiwikiToMarkdown( self, rawsource ):
-		ikiwiki = unicode(rawsource, "utf-8")
+	def ikiwikiToMarkdown( self, ikiwiki ):
 
 		# Extract all the ikiwiki directives
 		pattern = re.compile(r'\[\[!(.*?)\]\]', re.DOTALL )
