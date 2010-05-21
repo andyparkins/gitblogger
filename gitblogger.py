@@ -858,7 +858,7 @@ class TGitBlogger:
 </content>
 %s
 </entry>
-""" % (exportpostid, meta.title, meta.date, html, extras)
+""" % (exportpostid, meta.title, atomdate, html, extras)
 
 		return (atom.encode('utf-8'),meta)
 
