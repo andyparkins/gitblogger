@@ -353,6 +353,8 @@ class TGitBlogger:
 
 		for change in difftree:
 			change = change.split(' ', 5)
+			if len(change) < 5:
+				continue
 			status = change[4].split('\t')
 
 			fromhash = change[2]
