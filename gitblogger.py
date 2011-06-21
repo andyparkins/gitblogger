@@ -296,15 +296,15 @@ class TGitBlogger:
 				(mdwn, meta) = self.ikiwikiToMarkdown( md_source )
 
 				if meta.title is None:
-					print
+					print >> sys.stderr
 					print >> sys.stderr, "gitblogger: No title found in",article[1]
-					print
+					print >> sys.stderr
 					continue
 
 				LocalObject[meta.title] = article[0]
-				sys.stdout.write('.')
+				sys.stderr.write('.')
 
-			print
+			print >> sys.stderr
 			print >> sys.stderr, "gitblogger: %d titles extracted from repository-stored articles" % ( len(LocalObject) )
 
 			print >> sys.stderr, "gitblogger: Fetching post details for", blogname
