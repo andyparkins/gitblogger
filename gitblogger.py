@@ -539,11 +539,11 @@ class TGitBlogger:
 
 		response, content = self.http.request(url, 'GET', headers=headers)
 		if response['status'] == '404':
-			raise TGBError(content)
+			raise TGBError("HTTP Error %s" % (response['status']))
 		while response['status'] == '302':
 			response, content = self.http.request(response['location'], 'GET')
 			if response['status'] == '404':
-				raise TGBError(content)
+				raise TGBError("HTTP Error %s" % (response['status']))
 
 		# --- Parse
 		class Record:
@@ -676,10 +676,10 @@ class TGitBlogger:
 		while response['status'] == '302':
 			response, content = self.http.request(response['location'], 'GET')
 			if response['status'] == '404':
-				raise TGBError(content)
+				raise TGBError("HTTP Error %s" % (response['status']))
 
 		if response['status'] != '200':
-			raise TGBError(content)
+			raise TGBError("HTTP Error %s" % (response['status']))
 
 
 
@@ -742,13 +742,15 @@ class TGitBlogger:
 
 		# Check for a redirect
 		while response['status'] == '302':
-			response, content = self.http.request(response['location'], 'GET')
-			if response['status'] == '404':
-				raise TGBError(content)
+			print >> sys.stderr, "Google redirecting postURL to",response['location']
+			response, content = self.http.request(response['location'], 'POST',
+				headers=headers, body=body )
 
-
-		if response['status'] != '201':
-			raise TGBError(content)
+		if response['status'] == '200':
+			print >> sys.stderr, "gitblogger: Google said OK rather than CREATED"
+			raise TGBError("Was expecting HTTP/201; got HTTP/200")
+		elif response['status'] != '201':
+			raise TGBError("Post wasn't created; HTTP Error %s" % (response['status']))
 
 		# Find the post ID
 		try:
