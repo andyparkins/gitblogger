@@ -100,6 +100,7 @@ class TGitBlogger:
 		if self.options.verbose:
 			print >> sys.stderr,  " --- Verbose mode active"
 			print >> sys.stderr,  self
+			httplib2.debuglevel = 20
 
 		# Create a httplib object for doing the web work
 		self.http = httplib2.Http()
@@ -737,8 +738,6 @@ class TGitBlogger:
 			if response['status'] == '404':
 				raise TGBError(content)
 
-		if self.options.verbose:
-			print >> sys.stderr,  "RX:", response
 
 		if response['status'] != '201':
 			raise TGBError(content)
@@ -887,10 +886,6 @@ class TGitBlogger:
 		# Make the request
 		response, content = self.http.request(auth_url, 'POST',
 			body=auth_request, headers=auth_headers)
-
-		if self.options.verbose:
-			print >> sys.stderr,  "BLOGGER>",content
-			print >> sys.stderr,  "BLOGGER>",response
 
 		if response['status'] == '200':
 			authtoken = re.search('Auth=(\S*)', content).group(1).strip()
