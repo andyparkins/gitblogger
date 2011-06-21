@@ -373,6 +373,7 @@ class TGitBlogger:
 						(atom, meta) = self.ikiwikiToAtom(md_source)
 					except Exception, e:
 						raise TGBError("Couldn't convert article to XHTML: %s" % (e.args[0]) )
+						break
 					print >> sys.stderr, "gitblogger: Converted article, \"%s\", is %d bytes, uploading..." % (meta.title, len(atom))
 					if self.options.preview:
 						print atom
