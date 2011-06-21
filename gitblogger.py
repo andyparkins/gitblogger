@@ -319,7 +319,7 @@ class TGitBlogger:
 				if retcode != 0:
 					print >> sys.stderr, "gitblogger: Failed to record tracking ID in git repository"
 				notecount = notecount + 1
-			print >> sys.stderr, "gitblogger: Sync complete, %d tracking IDs written or rewritten" % (notecount)
+			print >> sys.stderr, "gitblogger: Sync complete, %d tracking IDs written or rewritten; %d titles not found" % (notecount, len(LocalObject)-notecount)
 
 
 
@@ -637,6 +637,7 @@ class TGitBlogger:
 		categoryNodes = entryNode.getElementsByTagName('catgegory')
 		for categoryNode in categoryNodes:
 			if categoryNode.getAttribute( 'scheme' ) == "http://www.blogger.com/atom/ns#":
+				print >> sys.stderr, "gitblogger: Removing category",categoryNode.getAttribute('term')
 				entryNode.removeChild( categoryNode )
 		for tag in meta.categories:
 			categoryNode = dom.createElement('category')
@@ -721,7 +722,8 @@ class TGitBlogger:
 		fsize = len(body)
 
 		if self.options.verbose:
-			print >> sys.stderr,  "----- Transmitting to blog"
+			print >> sys.stderr,  "gitblogger: ----- Transmitting to blog", \
+				blog.PostURL
 
 		print >> sys.stderr, "gitblogger: Uploading entry \"%s\", size %d" % (meta.title, fsize)
 
@@ -882,7 +884,8 @@ class TGitBlogger:
 			(login, password)
 
 		if self.options.verbose:
-			print >> sys.stderr,  "---- Authenticating"
+			print >> sys.stderr,  "gitblogger: ---- Authenticating to", \
+				auth_url
 
 		# Make the request
 		response, content = self.http.request(auth_url, 'POST',
