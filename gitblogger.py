@@ -828,6 +828,8 @@ class TGitBlogger:
 		atomdate = None
 		if meta.date is not None:
 			atomdate = '<published>' + meta.date + '</published>'
+		else:
+			atomdate = ''
 
 		# --- Add atom wrapper
 		extras = "<category scheme='http://schemas.google.com/g/2005#kind' term='http://schemas.google.com/blogger/2008/kind#post'/>\n"
@@ -836,7 +838,7 @@ class TGitBlogger:
 			extras = extras + "<category scheme='http://www.blogger.com/atom/ns#' term='%s' />\n" % (tag)
 
 		# Draft mode
-		if self.options.draft:
+		if self.options.draft or meta.date is None:
 			extras = extras + """<app:control xmlns:app='http://www.w3.org/2007/app'>
   <app:draft>yes</app:draft>
 </app:control>
