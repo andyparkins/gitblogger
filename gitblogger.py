@@ -378,7 +378,11 @@ class TGitBlogger:
 					if self.options.preview:
 						print atom
 						break
-					id = self.createPost( atom, meta, blogname )
+					try:
+						id = self.createPost( atom, meta, blogname )
+					except TGBError, e:
+						print >> sys.stderr, "gitblogger: Upload failed,", e.args[0]
+						break
 					print >> sys.stderr, "gitblogger: Upload complete, article was assigned the id, \"%s\"" % (id)
 					retcode = subprocess.call(["git", "notes", "--ref", self.notesref, \
 						"add", "-f", "-m", id, tohash], stdout=subprocess.PIPE)
