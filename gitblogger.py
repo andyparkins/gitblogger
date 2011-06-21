@@ -37,6 +37,7 @@ import subprocess
 import locale
 import time
 import re
+import codecs
 from optparse import OptionParser
 
 # Additional
@@ -164,11 +165,11 @@ class TGitBlogger:
 		elif self.options.mode == 'testmd':
 			for filename in self.positionalparameters:
 				print "---",filename
-				f = open(filename, mode='rb', encoding='utf-8')
+				f = codecs.open(filename, mode='rb', encoding='utf-8')
 				ikiwiki = f.read()
 				(mdwn, meta) = self.ikiwikiToMarkdown( ikiwiki )
 				print repr(meta.__dict__)
-				print mdwn
+				print mdwn.encode('utf-8')
 
 		elif self.options.mode == 'bootstrap':
 			# Establish authentication token
