@@ -171,6 +171,16 @@ class TGitBlogger:
 				print repr(meta.__dict__)
 				print mdwn.encode('utf-8')
 
+		elif self.options.mode == 'testxml':
+			for filename in self.positionalparameters:
+				print "<!-- ",filename
+				f = codecs.open(filename, mode='rb', encoding='utf-8')
+				ikiwiki = f.read()
+				(mdwn, meta) = self.ikiwikiToAtom( ikiwiki )
+				print repr(meta.__dict__)
+				print "-->"
+				print mdwn.encode('utf-8')
+
 		elif self.options.mode == 'bootstrap':
 			# Establish authentication token
 			print >> sys.stderr, "gitblogger: Logging into Google GData API as", self.options.username
@@ -990,6 +1000,9 @@ class TGitBlogger:
 		parser.add_option( "", "--testmd", dest="mode",
 			action="store_const", const="testmd",
 			help="Test the ikiwiki-to-markdown engine from the supplied filenames")
+		parser.add_option( "", "--testxml", dest="mode",
+			action="store_const", const="testxml",
+			help="Test the ikiwiki-to-XML engine from the supplied filenames")
 		parser.add_option( "", "--sync", dest="mode",
 			action="store_const", const="sync",
 			help="Use article titles to look up post IDs")
