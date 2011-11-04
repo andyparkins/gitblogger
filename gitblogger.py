@@ -386,6 +386,11 @@ class TGitBlogger:
 					except Exception, e:
 						raise TGBError("Couldn't convert article to XHTML: %s" % (e.args[0]) )
 						break
+					try:
+						tempParsingDom = minidom.parseString( atom )
+					except Exception, e:
+						print >> sys.stderr, "gitblogger: markdown created XML is not valid,", e.args[0]
+						break
 					print >> sys.stderr, "gitblogger: Converted article, \"%s\", is %d bytes, uploading..." % (meta.title, len(atom))
 					if self.options.preview:
 						print atom
@@ -455,7 +460,10 @@ class TGitBlogger:
 						print >> sys.stderr, "gitblogger: Lookup failed, can't delete remote blog article without a tracking ID"
 						break
 					print >> sys.stderr, "gitblogger: Modifying remote post,", postid
-					self.modifyPost( mdwn, meta, postid )
+					try:
+						self.modifyPost( mdwn, meta, postid )
+					except:
+						break;
 					print >> sys.stderr, "gitblogger: Post modified"
 
 				elif status[0][0] == 'R':
@@ -632,7 +640,11 @@ class TGitBlogger:
 		# wrapped in something; it actually doesn't matter what as we're
 		# going to strip the container off anyway
 		x = u"<content>" + markdown.markdown(mdwn) + u"</content>"
-		tempParsingDom = minidom.parseString( x.encode('utf-8') )
+		try:
+			tempParsingDom = minidom.parseString( x.encode('utf-8') )
+		except Exception, e:
+			print >> sys.stderr, "gitblogger: markdown created XML is not valid,", e.args[0]
+			raise
 
 		# Import the new content into the existing article's DOM,
 		# preserving the XML tree.
