@@ -976,7 +976,7 @@ class TGitBlogger:
 	def readCommandLine( self ):
 		# Configure parser
 		parser = OptionParser(
-			usage="usage: %prog [options]",
+			usage="usage: %prog [options] [<oldrev> <newrev> <refname>]",
 			version="%prog 1.0")
 		# "-h", "--help" supplied automatically by OptionParser
 		parser.add_option( "-v", "--verbose", dest="verbose",
