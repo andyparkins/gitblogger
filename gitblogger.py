@@ -34,6 +34,7 @@
 import sys
 import os
 import subprocess
+import popen2
 import locale
 import time
 import re
@@ -84,6 +85,7 @@ class TGitBlogger:
 		self.options.targetblog = None
 		self.options.mode = 'post-receive'
 		self.options.draft = False
+		self.options.markdownpipe = None
 
 	#
 	# Function:		run
@@ -169,7 +171,7 @@ class TGitBlogger:
 				ikiwiki = f.read()
 				(mdwn, meta) = self.ikiwikiToMarkdown( ikiwiki )
 				print repr(meta.__dict__)
-				print mdwn.encode('utf-8')
+				print mdwn
 
 		elif self.options.mode == 'testxml':
 			for filename in self.positionalparameters:
@@ -179,7 +181,7 @@ class TGitBlogger:
 				(mdwn, meta) = self.ikiwikiToAtom( ikiwiki )
 				print repr(meta.__dict__)
 				print "-->"
-				print mdwn.encode('utf-8')
+				print mdwn
 
 		elif self.options.mode == 'bootstrap':
 			# Establish authentication token
@@ -639,7 +641,7 @@ class TGitBlogger:
 		# supply a root node as XML requires that the whole document be
 		# wrapped in something; it actually doesn't matter what as we're
 		# going to strip the container off anyway
-		x = u"<content>" + markdown.markdown(mdwn) + u"</content>"
+		x = u"<content>" + self.markdownToHTML(mdwn) + u"</content>"
 		try:
 			tempParsingDom = minidom.parseString( x.encode('utf-8') )
 		except Exception, e:
@@ -788,6 +790,23 @@ class TGitBlogger:
 
 		return id
 
+	def markdownToHTML( self, mdwn ):
+
+		if self.options.markdownpipe is None :
+			# Workaround bug in python markdown module
+			# http://www.freewisdom.org/projects/python-markdown/Tickets/000059
+			mdwn = re.sub(r'\[(.+?)\]: *<(.+)>', r'[\1]: \2', mdwn )
+
+			return markdown.markdown(mdwn)
+		else:
+			r,w,e = popen2.popen3(self.options.markdownpipe)
+			w.write( mdwn.encode('utf-8') )
+			w.close()
+			return r.read().decode('utf-8')
+#			p = subprocess.Popen(self.options.markdownpipe.split(),
+#				stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+#			return p.communicate(mdwn)[0].strip()
+
 	#
 	# Function:		ikiwikiToMarkdown
 	# Description:
@@ -798,10 +817,6 @@ class TGitBlogger:
 		pattern = re.compile(r'\[\[!(.*?)\]\]', re.DOTALL )
 		directives = pattern.findall(ikiwiki)
 		mdwn = pattern.sub('', ikiwiki).strip()
-
-		# Workaround bug in python markdown module
-		# http://www.freewisdom.org/projects/python-markdown/Tickets/000059
-		mdwn = re.sub(r'\[(.+?)\]: *<(.+)>', r'[\1]: \2', mdwn )
 
 		# Extract meta data from ikiwiki directives
 		meta = Record()
@@ -846,7 +861,7 @@ class TGitBlogger:
 		(mdwn, meta) = self.ikiwikiToMarkdown( rawsource )
 
 		# Convert from markdown syntax to HTML
-		html = markdown.markdown(mdwn)
+		html = self.markdownToHTML(mdwn)
 
 		# Convert date to atom format
 		atomdate = None
@@ -950,7 +965,11 @@ class TGitBlogger:
 
 		self.options.username = subprocess.Popen(["git", "config", "--get", "gitblogger.username"], stdout=subprocess.PIPE).communicate()[0].strip()
 		self.options.password = subprocess.Popen(["git", "config", "--get", "gitblogger.password"], stdout=subprocess.PIPE).communicate()[0].strip()
+		self.options.markdownpipe = subprocess.Popen(["git", "config", "--get", "gitblogger.markdownpipe"], stdout=subprocess.PIPE).communicate()[0].strip()
 		self.notesref = subprocess.Popen(["git", "config", "--get", "gitblogger.notesref"], stdout=subprocess.PIPE).communicate()[0].strip()
+
+		if self.options.markdownpipe == "":
+			self.options.markdownpipe = None
 
 		if len(self.notesref) == 0:
 			self.notesref = 'notes/gitblogger'
@@ -1021,6 +1040,9 @@ class TGitBlogger:
 		parser.add_option( "", "--bootstrap", dest="mode",
 			action="store_const", const="bootstrap",
 			help="Generate a blogger-compatible XML file to mass upload a blog")
+		parser.add_option( "", "--pandoc", dest="markdownpipe",
+			action="store_const", const="pandoc --mathml -S -f markdown -t html",
+			help="Use pandoc for markdown-to-html conversion")
 		parser.set_defaults(mode=self.options.mode, preview=False)
 
 		# Run the parser
