@@ -378,7 +378,11 @@ class TGitBlogger:
 			fromhash = change[2]
 			tohash = change[3]
 
-			print >> sys.stderr, "gitblogger: ---",status[1]
+			print >> sys.stderr, "gitblogger: ---",status[1],
+			if self.options.markdownpipe is None:
+				print >> sys.stderr
+			else:
+				print >> sys.stderr, "(ext)"
 			while True: 
 				if status[0][0] == 'A':
 					print >> sys.stderr, "gitblogger: Fetching new article from repository,",status[1]
@@ -1048,6 +1052,7 @@ class TGitBlogger:
 			help="Generate a blogger-compatible XML file to mass upload a blog")
 		parser.add_option( "", "--pandoc", dest="markdownpipe",
 			action="store_const", const="pandoc --mathml -S -f markdown -t html",
+			default=self.options.markdownpipe,
 			help="Use pandoc for markdown-to-html conversion")
 		parser.add_option( "", "--config", dest="mode",
 			action="store_const", const="config",
