@@ -257,7 +257,7 @@ class TGitBlogger:
 				print >> sys.stderr, ""
 				continue
 
-			print mdwn
+			print mdwn.encode('utf-8')
 
 			LocalObject[meta.title] = article[0]
 			sys.stderr.write('.')
@@ -399,13 +399,13 @@ class TGitBlogger:
 						raise TGBError("Couldn't convert article to XHTML: %s" % (e.args[0]) )
 						break
 					try:
-						tempParsingDom = minidom.parseString( atom )
+						tempParsingDom = minidom.parseString( atom.encode('utf-8') )
 					except Exception, e:
 						print >> sys.stderr, "gitblogger: markdown created XML is not valid,", e.args[0]
 						break
 					print >> sys.stderr, "gitblogger: Converted article, \"%s\", is %d bytes, uploading..." % (meta.title, len(atom))
 					if self.options.preview:
-						print atom
+						print atom.encode('utf-8')
 						break
 					try:
 						id = self.createPost( atom, meta, blogname )
@@ -760,6 +760,8 @@ class TGitBlogger:
 
 		blog = self.Blogs[targetblog]
 
+		body = body.encode('utf-8')
+
 		fsize = len(body)
 
 		if self.options.verbose:
@@ -876,25 +878,25 @@ class TGitBlogger:
 		# Convert date to atom format
 		atomdate = None
 		if meta.date is not None:
-			atomdate = '<published>' + meta.date + '</published>'
+			atomdate = u'<published>' + meta.date + u'</published>'
 		else:
 			atomdate = ''
 
 		# --- Add atom wrapper
-		extras = "<category scheme='http://schemas.google.com/g/2005#kind' term='http://schemas.google.com/blogger/2008/kind#post'/>\n"
+		extras = u"<category scheme='http://schemas.google.com/g/2005#kind' term='http://schemas.google.com/blogger/2008/kind#post'/>\n"
 		# Tags
 		for tag in meta.categories:
-			extras = extras + "<category scheme='http://www.blogger.com/atom/ns#' term='%s' />\n" % (tag)
+			extras = extras + u"<category scheme='http://www.blogger.com/atom/ns#' term='%s' />\n" % (tag)
 
 		# Draft mode
 		if self.options.draft or meta.date is None:
-			extras = extras + """<app:control xmlns:app='http://www.w3.org/2007/app'>
+			extras = extras + u"""<app:control xmlns:app='http://www.w3.org/2007/app'>
   <app:draft>yes</app:draft>
 </app:control>
 """
 
 		if exportpostid is None:
-			atom = """<entry xmlns='http://www.w3.org/2005/Atom'>
+			atom = u"""<entry xmlns='http://www.w3.org/2005/Atom'>
   <title type='text'>%s</title>
   %s
 <content type='xhtml'>
@@ -906,8 +908,8 @@ class TGitBlogger:
 </entry>
 """ % (meta.title, atomdate, html, extras)
 		else:
-			extras = extras + "<thr:total>0</thr:total>"
-			atom = """<entry xmlns='http://www.w3.org/2005/Atom'>
+			extras = extras + u"<thr:total>0</thr:total>"
+			atom = u"""<entry xmlns='http://www.w3.org/2005/Atom'>
   <id>%s</id>
   <title type='text'>%s</title>
   %s
@@ -920,7 +922,7 @@ class TGitBlogger:
 </entry>
 """ % (exportpostid, meta.title, atomdate, html, extras)
 
-		return (atom.encode('utf-8'),meta)
+		return (atom,meta)
 
 
 	#
