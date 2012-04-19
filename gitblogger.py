@@ -147,6 +147,12 @@ class TGitBlogger:
 					continue
 				self.sendBlogUpdate( oldrev, newrev, blog )
 
+		elif self.options.mode == 'config':
+			print "username     =", self.options.username
+			print "mode         =", self.options.mode
+			print "draft        =", self.options.draft
+			print "markdownpipe =", self.options.markdownpipe
+
 		elif self.options.mode == 'listblogs':
 			# Establish authentication token
 			print >> sys.stderr, "gitblogger: Logging into Google GData API as", self.options.username
@@ -1043,6 +1049,9 @@ class TGitBlogger:
 		parser.add_option( "", "--pandoc", dest="markdownpipe",
 			action="store_const", const="pandoc --mathml -S -f markdown -t html",
 			help="Use pandoc for markdown-to-html conversion")
+		parser.add_option( "", "--config", dest="mode",
+			action="store_const", const="config",
+			help="Show configuration in use")
 		parser.set_defaults(mode=self.options.mode, preview=False)
 
 		# Run the parser
