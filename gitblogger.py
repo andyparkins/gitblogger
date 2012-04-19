@@ -780,7 +780,7 @@ class TGitBlogger:
 
 		# Check for a redirect
 		while response['status'] == '302':
-			print >> sys.stderr, "Google redirecting postURL to",response['location']
+			print >> sys.stderr, "gitblogger: Google redirecting postURL to",response['location']
 			response, content = self.http.request(response['location'], 'POST',
 				headers=headers, body=body )
 
