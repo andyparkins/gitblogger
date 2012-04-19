@@ -703,7 +703,7 @@ class TGitBlogger:
 
 		headers = { 'Authorization': 'GoogleLogin auth=%s' % self.authtoken,
 			'GData-Version':'2',
-			'Content-Type':'application/atom+xml',
+			'Content-Type':'application/atom+xml;charset=utf-8',
 			}
 		response, content = self.http.request( postURL, 'PUT',
 			headers=headers,body=upload.encode('utf-8') )
@@ -772,7 +772,7 @@ class TGitBlogger:
 
 		headers = { 'Authorization': 'GoogleLogin auth=%s' % self.authtoken,
 			'GData-Version':'2',
-			'Content-Type':'application/atom+xml',
+			'Content-Type':'application/atom+xml;charset=utf-8',
 			'Content-Length':'%s' % fsize }
 
 		response, content = self.http.request( blog.PostURL, 'POST',
