@@ -56,6 +56,11 @@ try:
 except Exception, e:
 	print >> sys.stderr, "gitblogger: WARNING: wordpresslib not found"
 
+import smtplib
+import email
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+
 
 # ----- Constants
 
@@ -579,6 +584,83 @@ class TBlogHandlerBlogger(TBlogHandlerBase):
 # Class:
 # Description:
 #
+class TBlogHandlerBloggerEmail(TBlogHandlerBlogger):
+	def __init__( self, mGitBlog, name ):
+		TBlogHandlerBlogger.__init__(self, mGitBlog, name)
+		self.postemail = None
+		self.fromemail = self.parent.options.username
+
+	def readGitConfig( self, gitconfig ):
+		TBlogHandlerBlogger.readGitConfig( self, gitconfig )
+		self.postemail = gitconfig['postemail']
+		if gitconfig.has_key('fromemail'):
+			self.fromemail = gitconfig['fromemail']
+
+	#
+	# Function:		modifyPost
+	# Description:
+	#
+	def modifyPost( self, mdwn, meta, entryID ):
+		print >> sys.stderr,  "gitblogger: WARNING: post modification is not possible for email blogs", \
+
+	#
+	# Function:		deletePost
+	# Description:
+	#
+	def deletePost( self, entryID ):
+		print >> sys.stderr,  "gitblogger: WARNING: post deleteion is not possible for email blogs", \
+
+	#
+	# Function:		createPost
+	# Description:
+	#
+	def createPost( self, body, meta ):
+		if self.parent.options.verbose:
+			print >> sys.stderr,  "gitblogger: ----- Transmitting to blog", \
+				name
+
+		fsize = len(body.encode('utf-8'))
+
+		print >> sys.stderr, "gitblogger: Emailing entry \"%s\", size %d" % (meta.title, fsize)
+
+		# Create message container - the correct MIME type is multipart/alternative.
+		msg = MIMEMultipart()
+		msg['Subject'] = meta.title
+		msg['From'] = self.fromemail
+		msg['To'] = self.postemail
+		msg.preamble = "This is not the post; it is outside the MIME container\n"
+		if meta.date is not None:
+			msg['Date'] = email.formatdate(meta.date)
+
+		msg.attach( MIMEText( body, 'html', 'utf-8' ) )
+
+		# Send the message via local SMTP server
+		s = smtplib.SMTP('localhost')
+		s.sendmail(self.fromemail, self.postemail, msg.as_string())
+		s.quit()
+
+		return None
+
+	#
+	# Function:		convertMarkdownToPost
+	# Description:
+	#
+	def convertMarkdownToPost( self, ikiwiki ):
+		# Install plugin handler for different file types
+		# here.  At the moment this is hard coded for
+		# ikiwiki-style markdown
+		try:
+			(mdwn, meta) = ikiwikiToMarkdown(ikiwiki)
+			html = self.parent.markdownToHTML( mdwn )
+		except Exception, e:
+			raise TGBError("Couldn't convert article to XHTML: %s" % (e.args[0]) )
+
+		return (html, meta)
+
+#
+# Class:
+# Description:
+#
 class TBlogHandlerWordPress(TBlogHandlerBase):
 	def __init__( self, mGitBlog, name ):
 		TBlogHandlerBase.__init__(self, mGitBlog, name)
@@ -772,7 +854,7 @@ class TGitBlogger:
 
 			# Find the matching blog record
 			for blog in self.BlogHandlers.itervalues():
-				if blog.blogbranch != refname[2]:
+				if blog is None or blog.blogbranch != refname[2]:
 					continue
 				self.sendBlogUpdate( oldrev, newrev, blog )
 
@@ -784,11 +866,15 @@ class TGitBlogger:
 
 		elif self.options.mode == 'listblogs':
 			for blog in self.BlogHandlers.itervalues():
+				if blog is None:
+					continue
 				blog.authenticate()
 
 			print >> sys.stderr, "gitblogger: Fetching details of blogs owned by", self.options.username
 			# Find the matching blog record
 			for blog in self.BlogHandlers.itervalues():
+				if blog is None:
+					continue
 				blog.fetchBlogDetails()
 				blog.printSubBlogDetails()
 
@@ -835,13 +921,15 @@ class TGitBlogger:
 	# Description:
 	#
 	def generateImportXML( self, blogname ):
+		print >> sys.stderr, "gitblogger: Generating importable XML for blog,", blogname
 
 		if not self.BlogHandlers.has_key( blogname ):
 			print >> sys.stderr, "gitblogger: Skipping unknown blog", blogname
 			return
 
-		print >> sys.stderr, "gitblogger: Generating importable XML for blog,", blogname
 		blog = self.BlogHandlers[blogname]
+		if blog is None:
+			return
 
 		print >> sys.stderr, "gitblogger: Looking up local post titles in repository directory",os.path.normpath(blog.repositorypath) + os.sep
 		repoarticles = subprocess.Popen(["git", "ls-tree", "--full-tree", \
@@ -1023,11 +1111,14 @@ class TGitBlogger:
 					except TGBError, e:
 						print >> sys.stderr, "gitblogger: Upload failed,", e.args[0]
 						break
-					print >> sys.stderr, "gitblogger: Upload complete, article was assigned the id, \"%s\"" % (id)
-					retcode = subprocess.call(["git", "notes", "--ref", self.notesref, \
-						"add", "-f", "-m", id, tohash], stdout=subprocess.PIPE)
-					if retcode != 0:
-						print >> sys.stderr, "gitblogger: Failed to record tracking ID in git repository"
+					if id is not None:
+						print >> sys.stderr, "gitblogger: Upload complete, article was assigned the id, \"%s\"" % (id)
+						retcode = subprocess.call(["git", "notes", "--ref", self.notesref, \
+							"add", "-f", "-m", id, tohash], stdout=subprocess.PIPE)
+						if retcode != 0:
+							print >> sys.stderr, "gitblogger: Failed to record tracking ID in git repository"
+					else:
+						print >> sys.stderr, "gitblogger: Upload complete, but handler didn't supply a post ID"
 
 				elif status[0][0] == 'C':
 					print >> sys.stderr, "gitblogger: Article copied %s -> %s" % (status[1], status[2])
@@ -1245,9 +1336,14 @@ class TGitBlogger:
 		for gitconfigkey in GitConfiguration.iterkeys():
 			if GitConfiguration[gitconfigkey]['blogtype'] == 'wordpress':
 				self.BlogHandlers[gitconfigkey] = TBlogHandlerWordPress(self, gitconfigkey)
-			else:
+			elif GitConfiguration[gitconfigkey]['blogtype'] == 'blogger':
 				self.BlogHandlers[gitconfigkey] = TBlogHandlerBlogger(self, gitconfigkey)
-			self.BlogHandlers[gitconfigkey].readGitConfig(GitConfiguration[gitconfigkey])
+			elif GitConfiguration[gitconfigkey]['blogtype'] == 'bloggeremail':
+				self.BlogHandlers[gitconfigkey] = TBlogHandlerBloggerEmail(self, gitconfigkey)
+			else:
+				self.BlogHandlers[gitconfigkey] = None
+			if self.BlogHandlers[gitconfigkey] is not None:
+				self.BlogHandlers[gitconfigkey].readGitConfig(GitConfiguration[gitconfigkey])
 
 	#
 	# Function:		readCommandLine
