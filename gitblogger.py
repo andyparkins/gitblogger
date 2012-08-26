@@ -26,6 +26,11 @@
 # Notes
 #   http://code.google.com/apis/blogger/docs/2.0/developers_guide_protocol.html
 #
+#
+#  Still to deal with:
+#    - testxml mode
+#    - ikiwikiToAtom calls
+#
 # ----------------------------------------------------------------------------
 
 # ----- Includes
@@ -46,8 +51,70 @@ import markdown
 import httplib2
 from xml.dom import minidom
 
+try:
+	import wordpresslib
+except Exception, e:
+	print >> sys.stderr, "gitblogger: WARNING: wordpresslib not found"
+
 
 # ----- Constants
+
+
+# ----- Class definitions
+
+#
+# Function:		XMLText
+# Description:
+#
+def XMLText( xmlnode ):
+	ret = ""
+	for node in xmlnode.childNodes:
+		if node.nodeType == node.TEXT_NODE:
+			ret = ret + node.data
+	return ret
+
+#
+# Function:		ikiwikiToMarkdown
+# Description:
+#
+def ikiwikiToMarkdown( ikiwiki ):
+
+	# Extract all the ikiwiki directives
+	pattern = re.compile(r'\[\[!(.*?)\]\]', re.DOTALL )
+	directives = pattern.findall(ikiwiki)
+	mdwn = pattern.sub('', ikiwiki).strip()
+
+	# Extract meta data from ikiwiki directives
+	meta = Record()
+	meta.title = None
+	meta.date = None
+	meta.categories = []
+	for directive in directives:
+		directive = directive.replace("\n",' ')
+		x = re.findall('meta title="(.*)"', directive)
+		if len(x) > 0:
+			meta.title = x[0];
+		x = re.findall('meta date="(.*)"', directive)
+		if len(x) > 0:
+			meta.date = x[0];
+		x = re.findall('tag (.*)', directive)
+		if len(x) > 0:
+			meta.categories.extend(x[0].split(' '))
+
+	if meta.date is not None:
+		try:
+			localtime_tuple = time.strptime( meta.date, "%Y-%m-%d %H:%M:%S")
+		except ValueError:
+			try:
+				localtime_tuple = time.strptime( meta.date, "%Y-%m-%d %H:%M")
+			except ValueError:
+				localtime_tuple = time.strptime( meta.date, "%Y-%m-%d")
+		# Now we have a structure in local time, we convert to epoch
+		# time
+		meta.date = time.mktime(localtime_tuple)
+
+	return (mdwn, meta)
+
 
 
 # ----- Class definitions
@@ -65,6 +132,567 @@ class Record:
 #
 class TGBError(Exception):
 	pass
+
+# ------------
+
+#
+# Class:
+# Description:
+#
+class TBlogHandlerBase:
+	def __init__( self, parent, name ):
+		self.name = name
+		self.parent = parent
+		# defaults
+		self.blogbranch = 'master'
+		self.repositorypath = ''
+		self.sendasdraft = False
+
+	def readGitConfig( self, gitconfig ):
+		if gitconfig.has_key('blog_branch'):
+			self.blogbranch = gitconfig['blogbranch']
+		if gitconfig.has_key('repositorypath'):
+			self.repositorypath = gitconfig['repositorypath']
+		if gitconfig.has_key('sendasdraft'):
+			self.sendasdraft = gitconfig['sendasdraft']
+
+	def authenticate( self ):
+		raise TGBError("TBlogHandler::%s() is abstract" % (sys._getframe().f_code.co_name) )
+
+	def fetchBlogDetails( self ):
+		raise TGBError("TBlogHandler::%s() is abstract" % (sys._getframe().f_code.co_name) )
+
+	def printSubBlogDetails( self ):
+		raise TGBError("TBlogHandler::%s() is abstract" % (sys._getframe().f_code.co_name) )
+
+	def deletePost( self, entryID ):
+		raise TGBError("TBlogHandler::%s() is abstract" % (sys._getframe().f_code.co_name) )
+
+	def createPost( self, body, meta ):
+		raise TGBError("TBlogHandler::%s() is abstract" % (sys._getframe().f_code.co_name) )
+
+#
+# Class:
+# Description:
+#
+class TBlogHandlerBlogger(TBlogHandlerBase):
+	def __init__( self, parent, name ):
+		TBlogHandlerBase.__init__(self, parent, name)
+		self.authtoken = None
+
+		# Create a httplib object for doing the web work
+		self.http = httplib2.Http()
+
+	def readGitConfig( self, gitconfig ):
+		TBlogHandlerBase.readGitConfig( self, gitconfig )
+
+	def authenticate( self ):
+		# Don't bother authenticating again
+		if self.authtoken is not None:
+			return
+
+		# Establish authentication token
+		print >> sys.stderr, "gitblogger: Logging into Google GData API as", self.parent.options.username, "for", self.name
+		self.authtoken = self.bloggerAuthenticate( self.parent.options.username, self.parent.options.password )
+		if self.authtoken is None:
+			raise TGBError("GData authentication failed")
+		print >> sys.stderr, "gitblogger: Success, authtoken is",self.authtoken
+
+	#
+	# Function:		fetchBlogDetails
+	# Description:
+	#  Return a list of blogs
+	#
+	def fetchBlogDetails( self ):
+		print >> sys.stderr, "gitblogger: Fetching details of blogs owned by", self.parent.options.username, "for", self.name
+		url = 'http://www.blogger.com/feeds/default/blogs'
+
+		if self.authtoken:
+			headers = { 'Authorization': 'GoogleLogin auth=%s' % self.authtoken,
+			'GData-Version':'2'
+			}
+		else:
+			headers = None
+
+		response, content = self.http.request(url, 'GET', headers=headers)
+		if response['status'] == '404':
+			raise TGBError("HTTP Error %s" % (response['status']))
+		while response['status'] == '302':
+			response, content = self.http.request(response['location'], 'GET')
+			if response['status'] == '404':
+				raise TGBError("HTTP Error %s" % (response['status']))
+
+		# --- Parse
+		try:
+			dom = minidom.parseString( content )
+		except:
+			print content
+			raise
+		feedNode = dom.getElementsByTagName("feed")[0]
+		entryNodes = feedNode.getElementsByTagName("entry")
+
+		self.Blogs = dict()
+		for blog in entryNodes:
+			BlogRecord = Record()
+			BlogRecord.title = XMLText(blog.getElementsByTagName("title")[0])
+			BlogRecord.id = XMLText(blog.getElementsByTagName("id")[0])
+			links = blog.getElementsByTagName("link")
+			for link in links:
+				if link.attributes['rel'].value == 'self':
+					BlogRecord.SelfURL = link.attributes['href'].value
+				if link.attributes['rel'].value == 'alternate':
+					BlogRecord.URL = link.attributes['href'].value
+				if link.attributes['rel'].value == 'http://schemas.google.com/g/2005#feed':
+					BlogRecord.FeedURL = link.attributes['href'].value
+				if link.attributes['rel'].value == 'http://schemas.google.com/g/2005#post':
+					BlogRecord.PostURL = link.attributes['href'].value
+#			BlogRecord.id = re.findall('http://www.blogger.com/feeds/()/posts',BlogRecord.PostURL)[0]
+			BlogRecord.name = re.findall('http://(\w*).blogspot',BlogRecord.URL)[0]
+			self.Blogs[BlogRecord.name] = BlogRecord
+
+		dom.unlink()
+
+	#
+	# Function:		printSubBlogDetails
+	# Description:
+	#  Generate an authentication token to use for subsequent requests
+	#
+	def printSubBlogDetails( self ):
+		for blogrecord in self.Blogs.itervalues():
+			print blogrecord.name,blogrecord.id
+
+
+	#
+	# Function:		bloggerAuthenticate
+	# Description:
+	#  Generate an authentication token to use for subsequent requests
+	#
+	def bloggerAuthenticate( self, login = None, password = None ):
+		authtoken = None
+
+		# Don't try to authenticate when no details supplied
+		if not login or not password:
+			return authtoken;
+
+		# Create the authentication request
+		auth_url = 'https://www.google.com/accounts/ClientLogin'
+		auth_headers = {'Content-Type': 'application/x-www-form-urlencoded'}
+		auth_request = "Email=%s&Passwd=%s&service=blogger&accountType=GOOGLE" % \
+			(login, password)
+
+		if self.parent.options.verbose:
+			print >> sys.stderr,  "gitblogger: ---- Authenticating to", \
+				auth_url
+
+		# Make the request
+		response, content = self.http.request(auth_url, 'POST',
+			body=auth_request, headers=auth_headers)
+
+		if response['status'] == '200':
+			authtoken = re.search('Auth=(\S*)', content).group(1).strip()
+
+		return authtoken
+
+	#
+	# Function:		convertMarkdownToPost
+	# Description:
+	#
+	def convertMarkdownToPost( self, md_source ):
+		# Install plugin handler for different file types
+		# here.  At the moment this is hard coded for
+		# ikiwiki-style markdown
+		try:
+			(atom, meta) = self.ikiwikiToAtom(md_source)
+		except Exception, e:
+			raise TGBError("Couldn't convert article to XHTML: %s" % (e.args[0]) )
+
+		try:
+			tempParsingDom = minidom.parseString( atom.encode('utf-8') )
+		except Exception, e:
+			print >> sys.stderr, "gitblogger: markdown created XML is not valid,", e.args[0]
+			return (None, None)
+
+		return (atom, meta)
+
+	#
+	# Function:		modifyPost
+	# Description:
+	#
+	def modifyPost( self, mdwn, meta, entryID ):
+		headers = { 'Authorization': 'GoogleLogin auth=%s' % self.authtoken,
+			'GData-Version':'2'
+			}
+
+		# split entryID into PostID and BlogID
+		(blogID, postID) = re.findall('^tag:blogger.com,1999:blog-(\d+)\.post-(\d+)$', entryID )[0]
+		postURL = "http://www.blogger.com/feeds/%s/posts/default/%s" % \
+			(blogID, postID)
+
+		response, content = self.http.request( postURL, 'GET',
+			headers=headers )
+
+		# Check for a redirect
+		while response['status'] == '302':
+			response, content = self.http.request(response['location'], 'GET')
+			if response['status'] == '404':
+				raise TUPError(content)
+
+		if response['status'] != '200':
+			raise TUPError(content)
+
+		# Modify XML to hold new article
+		print >> sys.stderr, "gitblogger: Received %d bytes of article ready to modify" % (len(content))
+
+		try:
+			dom = minidom.parseString( content )
+		except:
+			print content
+			raise
+		entryNode = dom.getElementsByTagName("entry")[0]
+		contentNode = entryNode.getElementsByTagName("content")[0]
+
+		# Make a new XML tree from the replacement article, we have to
+		# supply a root node as XML requires that the whole document be
+		# wrapped in something; it actually doesn't matter what as we're
+		# going to strip the container off anyway
+		x = u"<content>" + self.parent.markdownToHTML(mdwn) + u"</content>"
+		try:
+			tempParsingDom = minidom.parseString( x.encode('utf-8') )
+		except Exception, e:
+			print >> sys.stderr, "gitblogger: markdown created XML is not valid,", e.args[0]
+			raise
+
+		# Import the new content into the existing article's DOM,
+		# preserving the XML tree.
+		newArticle = dom.importNode( tempParsingDom.childNodes[0], True )
+		# Import finished, we can do away with the temporary DOM
+		tempParsingDom.unlink()
+
+		# The new article is now attached to the old DOM.  We still have
+		# to put it somewhere in the tree, we do that by making a new
+		# container element for the content and swapping the new element
+		# for the old element
+		newContent = dom.createElement('content')
+		newContent.setAttribute('type', 'xhtml')
+		# attach the article to the new content node
+		newContent.appendChild( newArticle )
+		# Replace the old content node with the new content node
+		entryNode.replaceChild( newContent, contentNode )
+
+		categoryNodes = entryNode.getElementsByTagName('catgegory')
+		for categoryNode in categoryNodes:
+			if categoryNode.getAttribute( 'scheme' ) == "http://www.blogger.com/atom/ns#":
+				print >> sys.stderr, "gitblogger: Removing category",categoryNode.getAttribute('term')
+				entryNode.removeChild( categoryNode )
+		for tag in meta.categories:
+			categoryNode = dom.createElement('category')
+			categoryNode.setAttribute( 'scheme', "http://www.blogger.com/atom/ns#" )
+			categoryNode.setAttribute( 'term', tag )
+			entryNode.appendChild( categoryNode )
+
+		titleNode = entryNode.getElementsByTagName('title')[0]
+		newTitle = dom.createTextNode( meta.title )
+		titleNode.replaceChild( newTitle, titleNode.firstChild )
+
+		if meta.date is not None:
+			# Instruct blogger that this is a UTC time
+			meta.date = time.strftime('%Y-%m-%dT%H:%M:%S.000+00:00', time.gmtime(meta.date) )
+			publishedNode = entryNode.getElementsByTagName('published')[0]
+			if publishedNode is not None:
+				newPublished = dom.createTextNode( meta.date )
+				publishedNode.replaceChild( newPublished, publishedNode.firstChild )
+
+		upload = dom.toxml()
+		dom.unlink()
+
+		print >> sys.stderr, "gitblogger: Created replacement article, %d bytes" % (len(upload))
+
+		headers = { 'Authorization': 'GoogleLogin auth=%s' % self.authtoken,
+			'GData-Version':'2',
+			'Content-Type':'application/atom+xml; charset=utf-8',
+			'Content-Length':'%s' % len(upload.encode('utf-8')) }
+		try:
+			response, content = self.http.request( postURL, 'PUT',
+				headers=headers, body=upload )
+		except:
+			print >> sys.stderr, "gitblogger: exception in following HTML body"
+			print >> sys.stderr, upload.encode('utf-8')
+			raise
+
+		# Check for a redirect
+		while response['status'] == '302':
+			response, content = self.http.request(response['location'], 'GET')
+			if response['status'] == '404':
+				raise TGBError("HTTP Error %s" % (response['status']))
+
+		if response['status'] != '200':
+			raise TGBError("HTTP Error %s" % (response['status']))
+
+	#
+	# Function:		deletePost
+	# Description:
+	#
+	def deletePost( self, entryID ):
+		headers = { 'Authorization': 'GoogleLogin auth=%s' % self.authtoken,
+			'GData-Version':'2'
+			}
+
+		# split entryID into PostID and BlogID
+		(blogID, postID) = re.findall('^tag:blogger.com,1999:blog-(\d+)\.post-(\d+)$', entryID )[0]
+		postURL = "http://www.blogger.com/feeds/%s/posts/default/%s" % \
+			(blogID, postID)
+
+		response, content = self.http.request( postURL, 'DELETE',
+			headers=headers )
+
+		# Check for a redirect
+		while response['status'] == '302':
+			response, content = self.http.request(response['location'], 'GET')
+			if response['status'] == '404':
+				raise TUPError(content)
+
+		if response['status'] != '200':
+			raise TUPError(content)
+
+	#
+	# Function:		createPost
+	# Description:
+	#
+	def createPost( self, body, meta ):
+		if not self.authtoken:
+			raise TGBError("Not logged in while attempting upload")
+
+		if not blog.name in self.Blogs:
+			raise TGBError("Target blog name \"%s\" not found in blogger.com list" % blogname)
+		blog = self.Blogs[blog.name]
+
+#		body = body.encode('utf-8')
+
+		fsize = len(body.encode('utf-8'))
+
+		if self.parent.options.verbose:
+			print >> sys.stderr,  "gitblogger: ----- Transmitting to blog", \
+				blog.PostURL
+
+		print >> sys.stderr, "gitblogger: Uploading entry \"%s\", size %d" % (meta.title, fsize)
+
+		headers = { 'Authorization': 'GoogleLogin auth=%s' % self.authtoken,
+			'GData-Version':'2',
+			'Content-Type':'application/atom+xml; charset=utf-8',
+			'Content-Length':'%s' % fsize }
+
+		try:
+			response, content = self.http.request( blog.PostURL, 'POST',
+				headers=headers, body=body )
+		except:
+			print >> sys.stderr, "gitblogger: exception in following HTML body"
+			print >> sys.stderr, body.encode('utf-8')
+			raise
+
+		# Check for a redirect
+		while response['status'] == '302':
+			print >> sys.stderr, "gitblogger: Google redirecting postURL to",response['location']
+			response, content = self.http.request(response['location'], 'POST',
+				headers=headers, body=body )
+
+		if response['status'] == '200':
+			print >> sys.stderr, "gitblogger: Google said OK rather than CREATED"
+			raise TGBError("Was expecting HTTP/201; got HTTP/200")
+		elif response['status'] != '201':
+			raise TGBError("Post wasn't created; HTTP Error %s" % (response['status']))
+
+		# Find the post ID
+		try:
+			dom = minidom.parseString( content )
+		except:
+			print content
+			raise
+		entryNode = dom.getElementsByTagName("entry")[0]
+		id = XMLText(entryNode.getElementsByTagName("id")[0])
+		dom.unlink()
+
+		return id
+
+	#
+	# Function:		ikiwikiToAtom
+	# Description:
+	#
+	def ikiwikiToAtom( self, rawsource, exportpostid = None ):
+		(mdwn, meta) = ikiwikiToMarkdown( rawsource )
+
+		# Convert from markdown syntax to HTML
+		html = self.parent.markdownToHTML(mdwn)
+
+		# Convert date to atom format
+		atomdate = None
+		if meta.date is not None:
+			# Instruct blogger that this is a UTC time
+			meta.date = time.strftime('%Y-%m-%dT%H:%M:%S.000+00:00', time.gmtime(meta.date) )
+			atomdate = u'<published>' + meta.date + u'</published>'
+		else:
+			atomdate = ''
+
+		# --- Add atom wrapper
+		extras = u"<category scheme='http://schemas.google.com/g/2005#kind' term='http://schemas.google.com/blogger/2008/kind#post'/>\n"
+		# Tags
+		for tag in meta.categories:
+			extras = extras + u"<category scheme='http://www.blogger.com/atom/ns#' term='%s' />\n" % (tag)
+
+		# Draft mode
+		if self.sendasdraft or meta.date is None:
+			extras = extras + u"""<app:control xmlns:app='http://www.w3.org/2007/app'>
+  <app:draft>yes</app:draft>
+</app:control>
+"""
+
+		if exportpostid is None:
+			atom = u"""<entry xmlns='http://www.w3.org/2005/Atom'>
+  <title type='text'>%s</title>
+  %s
+<content type='xhtml'>
+<div xmlns="http://www.w3.org/1999/xhtml">
+%s
+</div>
+</content>
+%s
+</entry>
+""" % (meta.title, atomdate, html, extras)
+		else:
+			extras = extras + u"<thr:total>0</thr:total>"
+			atom = u"""<entry xmlns='http://www.w3.org/2005/Atom'>
+  <id>%s</id>
+  <title type='text'>%s</title>
+  %s
+<content type='xhtml'>
+<div xmlns="http://www.w3.org/1999/xhtml">
+%s
+</div>
+</content>
+%s
+</entry>
+""" % (exportpostid, meta.title, atomdate, html, extras)
+
+		return (atom,meta)
+
+
+#
+# Class:
+# Description:
+#
+class TBlogHandlerWordPress(TBlogHandlerBase):
+	def __init__( self, mGitBlog, name ):
+		TBlogHandlerBase.__init__(self, mGitBlog, name)
+		self.wpurl = None
+		self.username = self.parent.options.username
+		self.password = self.parent.options.password
+
+	def readGitConfig( self, gitconfig ):
+		TBlogHandlerBase.readGitConfig( self, gitconfig )
+		if gitconfig.has_key('wpurl'):
+			self.url = gitconfig['wpurl']
+		if gitconfig.has_key('wpusername'):
+			self.username = gitconfig['wpusername']
+		if gitconfig.has_key('wppassword'):
+			self.password = gitconfig['wppassword']
+
+	def authenticate( self ):
+		self.wp = wordpresslib.WordPressClient(self.url, self.username, self.password)
+
+	#
+	# Function:		fetchBlogDetails
+	# Description:
+	#  Return a list of blogs
+	#
+	def fetchBlogDetails( self ):
+		print >> sys.stderr, "gitblogger: Fetching details of blogs owned by", self.username, "for", self.name
+
+		self.Blogs = self.wp.getUsersBlogs()
+
+	#
+	# Function:		printSubBlogDetails
+	# Description:
+	#  Generate an authentication token to use for subsequent requests
+	#
+	def printSubBlogDetails( self ):
+		for blogrecord in self.Blogs:
+			print blogrecord.url,blogrecord.id
+
+	#
+	# Function:		modifyPost
+	# Description:
+	#
+	def modifyPost( self, mdwn, meta, entryID ):
+		html = self.parent.markdownToHTML( mdwn )
+
+		# Fetch existing
+		post = self.wp.getPost(entryID)
+
+		# Update to current
+		if meta.title is not None:
+			post.title = meta.title
+		post.description = html
+		post.tags = meta.categories
+		if meta.date is not None:
+			post.date = meta.date
+
+		self.wp.editPost(post.id, post, not self.sendasdraft and meta.date is not None )
+
+	#
+	# Function:		deletePost
+	# Description:
+	#
+	def deletePost( self, entryID ):
+		self.wp.deletePost(entryID)
+
+	#
+	# Function:		createPost
+	# Description:
+	#
+	def createPost( self, body, meta ):
+		if self.parent.options.verbose:
+			print >> sys.stderr,  "gitblogger: ----- Transmitting to blog", \
+				name
+
+		self.wp.selectBlog(0)
+
+		fsize = len(body.encode('utf-8'))
+
+		post = wordpresslib.WordPressPost()
+		post.title = meta.title
+		post.description = body
+		post.tags = meta.categories
+		if meta.date is not None:
+			post.date = meta.date
+
+		print >> sys.stderr, "gitblogger: Uploading entry \"%s\", size %d" % (meta.title, fsize)
+
+		idPost = self.wp.newPost(post, not self.sendasdraft and meta.date is not None )
+		# Annoyingly, wordpresslib's newPost doesn't set the time correctly so
+		# you'll need the following line uncommented if you haven't patched
+		# wordpresslib to set the 'dateCreated' field in newPost() as well as
+		# in editPost()
+#		self.wp.editPost(post.id, post, not self.sendasdraft)
+
+		return str(idPost)
+
+
+	#
+	# Function:		convertMarkdownToPost
+	# Description:
+	#
+	def convertMarkdownToPost( self, ikiwiki ):
+		# Install plugin handler for different file types
+		# here.  At the moment this is hard coded for
+		# ikiwiki-style markdown
+		try:
+			(mdwn, meta) = ikiwikiToMarkdown(ikiwiki)
+			html = self.parent.markdownToHTML( mdwn )
+		except Exception, e:
+			raise TGBError("Couldn't convert article to XHTML: %s" % (e.args[0]) )
+
+		return (html, meta)
+
+# ------------
 
 #
 # Class:	TGitBlogger
@@ -86,6 +714,7 @@ class TGitBlogger:
 		self.options.mode = 'post-receive'
 		self.options.draft = False
 		self.options.markdownpipe = None
+		self.options.verbose = True
 
 	#
 	# Function:		run
@@ -126,8 +755,8 @@ class TGitBlogger:
 					continue
 
 				# Find the matching blog record
-				for blog in self.gitblogs.iterkeys():
-					if self.gitblogs[blog]['blogbranch'] != refname[2]:
+				for blog in self.BlogHandlers.itervalues():
+					if blog.blogbranch != refname[2]:
 						continue
 					self.sendBlogUpdate( oldrev, newrev, blog )
 
@@ -142,8 +771,8 @@ class TGitBlogger:
 				return
 
 			# Find the matching blog record
-			for blog in self.gitblogs.iterkeys():
-				if self.gitblogs[blog]['blogbranch'] != refname[2]:
+			for blog in self.BlogHandlers.itervalues():
+				if blog.blogbranch != refname[2]:
 					continue
 				self.sendBlogUpdate( oldrev, newrev, blog )
 
@@ -154,18 +783,14 @@ class TGitBlogger:
 			print "markdownpipe =", self.options.markdownpipe
 
 		elif self.options.mode == 'listblogs':
-			# Establish authentication token
-			print >> sys.stderr, "gitblogger: Logging into Google GData API as", self.options.username
-			self.authtoken = self.authenticate( self.options.username, self.options.password )
-			if self.authtoken is None:
-				raise TGBError("GData authentication failed")
-			print >> sys.stderr, "gitblogger: Success, authtoken is",self.authtoken
+			for blog in self.BlogHandlers.itervalues():
+				blog.authenticate()
 
 			print >> sys.stderr, "gitblogger: Fetching details of blogs owned by", self.options.username
-			self.fetchBlogDetails()
-
-			for blog in self.Blogs.itervalues():
-				print blog.name,blog.id
+			# Find the matching blog record
+			for blog in self.BlogHandlers.itervalues():
+				blog.fetchBlogDetails()
+				blog.printSubBlogDetails()
 
 		elif self.options.mode == 'sync':
 			self.synchroniseTrackingIDs()
@@ -175,7 +800,7 @@ class TGitBlogger:
 				print "---",filename
 				f = codecs.open(filename, mode='rb', encoding='utf-8')
 				ikiwiki = f.read()
-				(mdwn, meta) = self.ikiwikiToMarkdown( ikiwiki )
+				(mdwn, meta) = ikiwikiToMarkdown( ikiwiki )
 				print repr(meta.__dict__)
 				print mdwn
 
@@ -197,7 +822,6 @@ class TGitBlogger:
 				raise TGBError("GData authentication failed")
 			print >> sys.stderr, "gitblogger: Success, authtoken is",self.authtoken
 
-			print >> sys.stderr, "gitblogger: Fetching details of blogs owned by", self.options.username
 			self.fetchBlogDetails()
 
 			for blog in self.positionalparameters:
@@ -212,17 +836,17 @@ class TGitBlogger:
 	#
 	def generateImportXML( self, blogname ):
 
-		if not self.gitblogs.has_key( blogname ):
+		if not self.BlogHandlers.has_key( blogname ):
 			print >> sys.stderr, "gitblogger: Skipping unknown blog", blogname
 			return
 
 		print >> sys.stderr, "gitblogger: Generating importable XML for blog,", blogname
-		blog = self.gitblogs[blogname]
+		blog = self.BlogHandlers[blogname]
 
-		print >> sys.stderr, "gitblogger: Looking up local post titles in repository directory",os.path.normpath(blog['repositorypath']) + os.sep
+		print >> sys.stderr, "gitblogger: Looking up local post titles in repository directory",os.path.normpath(blog.repositorypath) + os.sep
 		repoarticles = subprocess.Popen(["git", "ls-tree", "--full-tree", \
-				blog['blogbranch'], \
-				os.path.normpath(blog['repositorypath']) + os.sep ], \
+				blog.blogbranch, \
+				os.path.normpath(blog.repositorypath) + os.sep ], \
 				stdout=subprocess.PIPE).communicate()[0].strip()
 		repoarticles = repoarticles.split('\n')
 
@@ -284,20 +908,19 @@ class TGitBlogger:
 			raise TGBError("GData authentication failed")
 		print >> sys.stderr, "gitblogger: Success, authtoken is",self.authtoken
 
-		print >> sys.stderr, "gitblogger: Fetching details of blogs owned by", self.options.username
 		self.fetchBlogDetails()
 
 		for blogname in self.positionalparameters:
-			if not self.gitblogs.has_key( blogname ):
+			if not self.BlogHandlers.has_key( blogname ):
 				print >> sys.stderr, "gitblogger: Skipping unknown blog", blogname
 				continue
 			print >> sys.stderr, "gitblogger: Syncing tracking IDs for blog,", blogname
-			blog = self.gitblogs[blogname]
+			blog = self.BlogHandlers[blogname]
 
-			print >> sys.stderr, "gitblogger: Looking up local post titles in repository directory",os.path.normpath(blog['repositorypath']) + os.sep
+			print >> sys.stderr, "gitblogger: Looking up local post titles in repository directory",os.path.normpath(blog.repositorypath) + os.sep
 			repoarticles = subprocess.Popen(["git", "ls-tree", "--full-tree", \
-					blog['blogbranch'], \
-					os.path.normpath(blog['repositorypath']) + os.sep ], \
+					blog.blogbranch, \
+					os.path.normpath(blog.repositorypath) + os.sep ], \
 					stdout=subprocess.PIPE).communicate()[0].strip()
 			repoarticles = repoarticles.split('\n')
 
@@ -311,7 +934,7 @@ class TGitBlogger:
 				md_source = subprocess.Popen(["git", "cat-file", "-p", \
 						article[0]], stdout=subprocess.PIPE).communicate()[0]
 				md_source = unicode( md_source, 'utf-8' )
-				(mdwn, meta) = self.ikiwikiToMarkdown( md_source )
+				(mdwn, meta) = ikiwikiToMarkdown( md_source )
 
 				if meta.title is None:
 					print >> sys.stderr
@@ -345,11 +968,12 @@ class TGitBlogger:
 	# Function:		sendBlogUpdate
 	# Description:
 	#
-	def sendBlogUpdate( self, oldrev, newrev, blogname ):
-		blog = self.gitblogs[blogname]
+	def sendBlogUpdate( self, oldrev, newrev, blog ):
+
+		print >> sys.stderr, "gitblogger: local changes in %s go to blog %s" % (blog.repositorypath, blog.name)
 
 		difftree = subprocess.Popen(["git", "diff-tree", "-r", "-M", "-C", \
-			"--relative=%s" % blog['repositorypath'],
+			"--relative=%s" % blog.repositorypath,
 			oldrev, newrev], stdout=subprocess.PIPE).communicate()[0]
 
 		if self.options.verbose:
@@ -359,15 +983,9 @@ class TGitBlogger:
 		if len(difftree) == 0:
 			return
 
-		# Establish authentication token
-		print >> sys.stderr, "gitblogger: Logging into Google GData API as", self.options.username
-		self.authtoken = self.authenticate( self.options.username, self.options.password )
-		if self.authtoken is None:
-			raise TGBError("GData authentication failed")
-		print >> sys.stderr, "gitblogger: Success, authtoken is",self.authtoken
+		blog.authenticate()
 
-		print >> sys.stderr, "gitblogger: Fetching details of blogs owned by", self.options.username
-		self.fetchBlogDetails()
+		blog.fetchBlogDetails()
 
 		for change in difftree:
 			change = change.split(' ', 5)
@@ -378,11 +996,13 @@ class TGitBlogger:
 			fromhash = change[2]
 			tohash = change[3]
 
+
+
 			print >> sys.stderr, "gitblogger: ---",status[1],
 			if self.options.markdownpipe is None:
 				print >> sys.stderr
 			else:
-				print >> sys.stderr, "(ext)"
+				print >> sys.stderr, "(pipe)"
 			while True: 
 				if status[0][0] == 'A':
 					print >> sys.stderr, "gitblogger: Fetching new article from repository,",status[1]
@@ -390,25 +1010,16 @@ class TGitBlogger:
 						tohash], stdout=subprocess.PIPE).communicate()[0]
 					md_source = unicode( md_source, 'utf-8' )
 					print >> sys.stderr, "gitblogger: Converting %d byte article to XHTML" % (len(md_source))
-					# Install plugin handler for different file types
-					# here.  At the moment this is hard coded for
-					# ikiwiki-style markdown
-					try:
-						(atom, meta) = self.ikiwikiToAtom(md_source)
-					except Exception, e:
-						raise TGBError("Couldn't convert article to XHTML: %s" % (e.args[0]) )
+
+					(post, meta) = blog.convertMarkdownToPost(md_source)
+					if post is None or meta is None or meta.title is None:
 						break
-					try:
-						tempParsingDom = minidom.parseString( atom.encode('utf-8') )
-					except Exception, e:
-						print >> sys.stderr, "gitblogger: markdown created XML is not valid,", e.args[0]
-						break
-					print >> sys.stderr, "gitblogger: Converted article, \"%s\", is %d bytes, uploading..." % (meta.title, len(atom))
+					print >> sys.stderr, "gitblogger: Converted article, \"%s\", is %d bytes, uploading..." % (meta.title, len(post))
 					if self.options.preview:
-						print atom.encode('utf-8')
+						print post.encode('utf-8')
 						break
 					try:
-						id = self.createPost( atom, meta, blogname )
+						id = blog.createPost( post, meta )
 					except TGBError, e:
 						print >> sys.stderr, "gitblogger: Upload failed,", e.args[0]
 						break
@@ -432,7 +1043,7 @@ class TGitBlogger:
 						print >> sys.stderr, "gitblogger: Lookup failed, can't delete remote blog article without a tracking ID"
 						break
 					print >> sys.stderr, "gitblogger: Removing remote posting with tracking ID,",postid
-					self.deletePost( postid )
+					blog.deletePost( postid )
 					print >> sys.stderr, "gitblogger: Removing local copy of tracking ID"
 					retcode = subprocess.call(["git", "notes", "--ref", self.notesref, \
 						"remove", fromhash], stdout=subprocess.PIPE)
@@ -456,7 +1067,7 @@ class TGitBlogger:
 					# here.  At the moment this is hard coded for
 					# ikiwiki-style markdown
 					try:
-						(mdwn, meta) = self.ikiwikiToMarkdown(md_source)
+						(mdwn, meta) = ikiwikiToMarkdown(md_source)
 					except Exception, e:
 						raise TGBError("Couldn't convert article to XHTML: %s" % (e.args[0]) )
 					print >> sys.stderr, "gitblogger: Converted article, \"%s\", is %d bytes, uploading..." % (meta.title, len(mdwn))
@@ -473,7 +1084,7 @@ class TGitBlogger:
 						break
 					print >> sys.stderr, "gitblogger: Modifying remote post,", postid
 					try:
-						self.modifyPost( mdwn, meta, postid )
+						blog.modifyPost( mdwn, meta, postid )
 					except Exception, e:
 						print >> sys.stderr, "gitblogger: Exception while modifying post,", e
 						break;
@@ -540,8 +1151,8 @@ class TGitBlogger:
 		self.Posts = dict()
 		for blog in entryNodes:
 			PostRecord = Record()
-			PostRecord.id = self.XMLText(blog.getElementsByTagName("id")[0])
-			PostRecord.title = self.XMLText(blog.getElementsByTagName("title")[0])
+			PostRecord.id = XMLText(blog.getElementsByTagName("id")[0])
+			PostRecord.title = XMLText(blog.getElementsByTagName("title")[0])
 			links = blog.getElementsByTagName("link")
 			for link in links:
 				if link.attributes['rel'].value == 'alternate':
@@ -556,262 +1167,9 @@ class TGitBlogger:
 		dom.unlink()
 
 	#
-	# Function:		fetchBlogDetails
-	# Description:
-	#  Return a list of blogs
-	#
-	def fetchBlogDetails( self ):
-		url = 'http://www.blogger.com/feeds/default/blogs'
-
-		if self.authtoken:
-			headers = { 'Authorization': 'GoogleLogin auth=%s' % self.authtoken,
-			'GData-Version':'2'
-			}
-		else:
-			headers = None
-
-		response, content = self.http.request(url, 'GET', headers=headers)
-		if response['status'] == '404':
-			raise TGBError("HTTP Error %s" % (response['status']))
-		while response['status'] == '302':
-			response, content = self.http.request(response['location'], 'GET')
-			if response['status'] == '404':
-				raise TGBError("HTTP Error %s" % (response['status']))
-
-		# --- Parse
-		class Record:
-			pass
-
-		try:
-			dom = minidom.parseString( content )
-		except:
-			print content
-			raise
-		feedNode = dom.getElementsByTagName("feed")[0]
-		entryNodes = feedNode.getElementsByTagName("entry")
-
-		self.Blogs = dict()
-		for blog in entryNodes:
-			BlogRecord = Record()
-			BlogRecord.title = self.XMLText(blog.getElementsByTagName("title")[0])
-			BlogRecord.id = self.XMLText(blog.getElementsByTagName("id")[0])
-			links = blog.getElementsByTagName("link")
-			for link in links:
-				if link.attributes['rel'].value == 'self':
-					BlogRecord.SelfURL = link.attributes['href'].value
-				if link.attributes['rel'].value == 'alternate':
-					BlogRecord.URL = link.attributes['href'].value
-				if link.attributes['rel'].value == 'http://schemas.google.com/g/2005#feed':
-					BlogRecord.FeedURL = link.attributes['href'].value
-				if link.attributes['rel'].value == 'http://schemas.google.com/g/2005#post':
-					BlogRecord.PostURL = link.attributes['href'].value
-#			BlogRecord.id = re.findall('http://www.blogger.com/feeds/()/posts',BlogRecord.PostURL)[0]
-			BlogRecord.name = re.findall('http://(\w*).blogspot',BlogRecord.URL)[0]
-			self.Blogs[BlogRecord.name] = BlogRecord
-
-		dom.unlink()
-
-	#
-	# Function:		modifyPost
+	# Function:		markdownToHTML
 	# Description:
 	#
-	def modifyPost( self, mdwn, meta, entryID ):
-		headers = { 'Authorization': 'GoogleLogin auth=%s' % self.authtoken,
-			'GData-Version':'2'
-			}
-
-		# split entryID into PostID and BlogID
-		(blogID, postID) = re.findall('^tag:blogger.com,1999:blog-(\d+)\.post-(\d+)$', entryID )[0]
-		postURL = "http://www.blogger.com/feeds/%s/posts/default/%s" % \
-			(blogID, postID)
-
-		response, content = self.http.request( postURL, 'GET',
-			headers=headers )
-
-		# Check for a redirect
-		while response['status'] == '302':
-			response, content = self.http.request(response['location'], 'GET')
-			if response['status'] == '404':
-				raise TUPError(content)
-
-		if response['status'] != '200':
-			raise TUPError(content)
-
-		# Modify XML to hold new article
-		print >> sys.stderr, "gitblogger: Received %d bytes of article ready to modify" % (len(content))
-
-		try:
-			dom = minidom.parseString( content )
-		except:
-			print content
-			raise
-		entryNode = dom.getElementsByTagName("entry")[0]
-		contentNode = entryNode.getElementsByTagName("content")[0]
-
-		# Make a new XML tree from the replacement article, we have to
-		# supply a root node as XML requires that the whole document be
-		# wrapped in something; it actually doesn't matter what as we're
-		# going to strip the container off anyway
-		x = u"<content>" + self.markdownToHTML(mdwn) + u"</content>"
-		try:
-			tempParsingDom = minidom.parseString( x.encode('utf-8') )
-		except Exception, e:
-			print >> sys.stderr, "gitblogger: markdown created XML is not valid,", e.args[0]
-			raise
-
-		# Import the new content into the existing article's DOM,
-		# preserving the XML tree.
-		newArticle = dom.importNode( tempParsingDom.childNodes[0], True )
-		# Import finished, we can do away with the temporary DOM
-		tempParsingDom.unlink()
-
-		# The new article is now attached to the old DOM.  We still have
-		# to put it somewhere in the tree, we do that by making a new
-		# container element for the content and swapping the new element
-		# for the old element
-		newContent = dom.createElement('content')
-		newContent.setAttribute('type', 'xhtml')
-		# attach the article to the new content node
-		newContent.appendChild( newArticle )
-		# Replace the old content node with the new content node
-		entryNode.replaceChild( newContent, contentNode )
-
-		categoryNodes = entryNode.getElementsByTagName('catgegory')
-		for categoryNode in categoryNodes:
-			if categoryNode.getAttribute( 'scheme' ) == "http://www.blogger.com/atom/ns#":
-				print >> sys.stderr, "gitblogger: Removing category",categoryNode.getAttribute('term')
-				entryNode.removeChild( categoryNode )
-		for tag in meta.categories:
-			categoryNode = dom.createElement('category')
-			categoryNode.setAttribute( 'scheme', "http://www.blogger.com/atom/ns#" )
-			categoryNode.setAttribute( 'term', tag )
-			entryNode.appendChild( categoryNode )
-
-		titleNode = entryNode.getElementsByTagName('title')[0]
-		newTitle = dom.createTextNode( meta.title )
-		titleNode.replaceChild( newTitle, titleNode.firstChild )
-
-		if meta.date is not None:
-			publishedNode = entryNode.getElementsByTagName('published')[0]
-			if publishedNode is not None:
-				newPublished = dom.createTextNode( meta.date )
-				publishedNode.replaceChild( newPublished, publishedNode.firstChild )
-
-		upload = dom.toxml()
-		dom.unlink()
-
-		print >> sys.stderr, "gitblogger: Created replacement article, %d bytes" % (len(upload))
-
-		headers = { 'Authorization': 'GoogleLogin auth=%s' % self.authtoken,
-			'GData-Version':'2',
-			'Content-Type':'application/atom+xml; charset=utf-8',
-			'Content-Length':'%s' % len(upload.encode('utf-8')) }
-		try:
-			response, content = self.http.request( postURL, 'PUT',
-				headers=headers, body=upload )
-		except:
-			print >> sys.stderr, "gitblogger: exception in following HTML body"
-			print >> sys.stderr, upload.encode('utf-8')
-			raise
-
-		# Check for a redirect
-		while response['status'] == '302':
-			response, content = self.http.request(response['location'], 'GET')
-			if response['status'] == '404':
-				raise TGBError("HTTP Error %s" % (response['status']))
-
-		if response['status'] != '200':
-			raise TGBError("HTTP Error %s" % (response['status']))
-
-
-	#
-	# Function:		deletePost
-	# Description:
-	#
-	def deletePost( self, entryID ):
-		headers = { 'Authorization': 'GoogleLogin auth=%s' % self.authtoken,
-			'GData-Version':'2'
-			}
-
-		# split entryID into PostID and BlogID
-		(blogID, postID) = re.findall('^tag:blogger.com,1999:blog-(\d+)\.post-(\d+)$', entryID )[0]
-		postURL = "http://www.blogger.com/feeds/%s/posts/default/%s" % \
-			(blogID, postID)
-
-		response, content = self.http.request( postURL, 'DELETE',
-			headers=headers )
-
-		# Check for a redirect
-		while response['status'] == '302':
-			response, content = self.http.request(response['location'], 'GET')
-			if response['status'] == '404':
-				raise TUPError(content)
-
-		if response['status'] != '200':
-			raise TUPError(content)
-
-	#
-	# Function:		createPost
-	# Description:
-	#
-	def createPost( self, body, meta, targetblog ):
-		if not self.authtoken:
-			raise TGBError("Not logged in while attempting upload")
-		if not targetblog:
-			raise TGBError("You must supply a blog name to upload to")
-
-		if not targetblog in self.Blogs:
-			raise TGBError("Target blog name \"%s\" not found in blogger.com list" % targetblog)
-
-		blog = self.Blogs[targetblog]
-
-#		body = body.encode('utf-8')
-
-		fsize = len(body.encode('utf-8'))
-
-		if self.options.verbose:
-			print >> sys.stderr,  "gitblogger: ----- Transmitting to blog", \
-				blog.PostURL
-
-		print >> sys.stderr, "gitblogger: Uploading entry \"%s\", size %d" % (meta.title, fsize)
-
-		headers = { 'Authorization': 'GoogleLogin auth=%s' % self.authtoken,
-			'GData-Version':'2',
-			'Content-Type':'application/atom+xml; charset=utf-8',
-			'Content-Length':'%s' % fsize }
-
-		try:
-			response, content = self.http.request( blog.PostURL, 'POST',
-				headers=headers, body=body )
-		except:
-			print >> sys.stderr, "gitblogger: exception in following HTML body"
-			print >> sys.stderr, body.encode('utf-8')
-			raise
-
-		# Check for a redirect
-		while response['status'] == '302':
-			print >> sys.stderr, "gitblogger: Google redirecting postURL to",response['location']
-			response, content = self.http.request(response['location'], 'POST',
-				headers=headers, body=body )
-
-		if response['status'] == '200':
-			print >> sys.stderr, "gitblogger: Google said OK rather than CREATED"
-			raise TGBError("Was expecting HTTP/201; got HTTP/200")
-		elif response['status'] != '201':
-			raise TGBError("Post wasn't created; HTTP Error %s" % (response['status']))
-
-		# Find the post ID
-		try:
-			dom = minidom.parseString( content )
-		except:
-			print content
-			raise
-		entryNode = dom.getElementsByTagName("entry")[0]
-		id = self.XMLText(entryNode.getElementsByTagName("id")[0])
-		dom.unlink()
-
-		return id
-
 	def markdownToHTML( self, mdwn ):
 
 		if self.options.markdownpipe is None :
@@ -830,144 +1188,6 @@ class TGitBlogger:
 #			return p.communicate(mdwn)[0].strip()
 
 	#
-	# Function:		ikiwikiToMarkdown
-	# Description:
-	#
-	def ikiwikiToMarkdown( self, ikiwiki ):
-
-		# Extract all the ikiwiki directives
-		pattern = re.compile(r'\[\[!(.*?)\]\]', re.DOTALL )
-		directives = pattern.findall(ikiwiki)
-		mdwn = pattern.sub('', ikiwiki).strip()
-
-		# Extract meta data from ikiwiki directives
-		meta = Record()
-		meta.title = None
-		meta.date = None
-		meta.categories = []
-		for directive in directives:
-			directive = directive.replace("\n",' ')
-			x = re.findall('meta title="(.*)"', directive)
-			if len(x) > 0:
-				meta.title = x[0];
-			x = re.findall('meta date="(.*)"', directive)
-			if len(x) > 0:
-				meta.date = x[0];
-			x = re.findall('tag (.*)', directive)
-			if len(x) > 0:
-				meta.categories.extend(x[0].split(' '))
-
-		if meta.date is not None:
-			try:
-				localtime_tuple = time.strptime( meta.date, "%Y-%m-%d %H:%M:%S")
-			except ValueError:
-				try:
-					localtime_tuple = time.strptime( meta.date, "%Y-%m-%d %H:%M")
-				except ValueError:
-					localtime_tuple = time.strptime( meta.date, "%Y-%m-%d")
-			# Now we have a structure in local time, we convert to epoch
-			# time
-			absolute_epoch = time.mktime(localtime_tuple)
-			# Convert to UTC
-			utc_tuple = time.gmtime(absolute_epoch)
-			# Instruct blogger that this is a UTC time
-			meta.date = time.strftime('%Y-%m-%dT%H:%M:%S.000+00:00', utc_tuple )
-
-		return (mdwn, meta)
-
-	#
-	# Function:		ikiwikiToAtom
-	# Description:
-	#
-	def ikiwikiToAtom( self, rawsource, exportpostid = None ):
-		(mdwn, meta) = self.ikiwikiToMarkdown( rawsource )
-
-		# Convert from markdown syntax to HTML
-		html = self.markdownToHTML(mdwn)
-
-		# Convert date to atom format
-		atomdate = None
-		if meta.date is not None:
-			atomdate = u'<published>' + meta.date + u'</published>'
-		else:
-			atomdate = ''
-
-		# --- Add atom wrapper
-		extras = u"<category scheme='http://schemas.google.com/g/2005#kind' term='http://schemas.google.com/blogger/2008/kind#post'/>\n"
-		# Tags
-		for tag in meta.categories:
-			extras = extras + u"<category scheme='http://www.blogger.com/atom/ns#' term='%s' />\n" % (tag)
-
-		# Draft mode
-		if self.options.draft or meta.date is None:
-			extras = extras + u"""<app:control xmlns:app='http://www.w3.org/2007/app'>
-  <app:draft>yes</app:draft>
-</app:control>
-"""
-
-		if exportpostid is None:
-			atom = u"""<entry xmlns='http://www.w3.org/2005/Atom'>
-  <title type='text'>%s</title>
-  %s
-<content type='xhtml'>
-<div xmlns="http://www.w3.org/1999/xhtml">
-%s
-</div>
-</content>
-%s
-</entry>
-""" % (meta.title, atomdate, html, extras)
-		else:
-			extras = extras + u"<thr:total>0</thr:total>"
-			atom = u"""<entry xmlns='http://www.w3.org/2005/Atom'>
-  <id>%s</id>
-  <title type='text'>%s</title>
-  %s
-<content type='xhtml'>
-<div xmlns="http://www.w3.org/1999/xhtml">
-%s
-</div>
-</content>
-%s
-</entry>
-""" % (exportpostid, meta.title, atomdate, html, extras)
-
-		return (atom,meta)
-
-
-	#
-	# Function:		authenticate
-	# Description:
-	#  Generate an authentication token to use for subsequent requests
-	#
-	def authenticate( self, login = None, password = None ):
-		authtoken = None
-
-		# Don't try to authenticate when no details supplied
-		if not login or not password:
-			return authtoken;
-
-		# Create the authentication request
-		auth_url = 'https://www.google.com/accounts/ClientLogin'
-		auth_headers = {'Content-Type': 'application/x-www-form-urlencoded'}
-		auth_request = "Email=%s&Passwd=%s&service=blogger&accountType=GOOGLE" % \
-			(login, password)
-
-		if self.options.verbose:
-			print >> sys.stderr,  "gitblogger: ---- Authenticating to", \
-				auth_url
-
-		# Make the request
-		response, content = self.http.request(auth_url, 'POST',
-			body=auth_request, headers=auth_headers)
-
-		if response['status'] == '200':
-			authtoken = re.search('Auth=(\S*)', content).group(1).strip()
-
-		return authtoken
-
-
-	#
 	# Function:		readConfigFile
 	# Description:
 	#  Read default settings from git config file
@@ -980,6 +1200,8 @@ class TGitBlogger:
 		#   notesref = notes/gitblogger
 		# 
 		# [blog "blogName"]
+		#   blogtype = blogger | wordpress
+		#   wp_url = https://blog.yoursite.com/blog/xmlrpc.php
 		#   blogbranch = master
 		#   repositorypath = blog/
 		#   sendasdraft = false
@@ -998,7 +1220,9 @@ class TGitBlogger:
 
 		lines = subprocess.Popen(["git", "config", "--get-regexp", "^blog\."], stdout=subprocess.PIPE).communicate()[0].split('\n')
 
-		self.gitblogs = dict()
+		self.BlogHandlers = dict()
+
+		GitConfiguration = dict()
 
 		for line in lines:
 			linelist = line.split(' ',2)
@@ -1010,15 +1234,20 @@ class TGitBlogger:
 				continue
 			if len(key) != 3:
 				continue
-			if not self.gitblogs.has_key(key[1]):
-				self.gitblogs[key[1]] = dict()
-				# Defaults
-				self.gitblogs[key[1]]['blogbranch'] = 'master'
-				self.gitblogs[key[1]]['repositorypath'] = ''
-				self.gitblogs[key[1]]['sendasdraft'] = False
+			if not GitConfiguration.has_key(key[1]):
+				GitConfiguration[key[1]] = dict()
+				# Default to blogger
+				GitConfiguration[key[1]]['blogtype'] = 'blogger'
+			# Read the line into the appropriate dictionary
+			GitConfiguration[key[1]][key[2]] = value
 
-			self.gitblogs[key[1]][key[2]] = value
-
+		# Create blog handler for each defined blog
+		for gitconfigkey in GitConfiguration.iterkeys():
+			if GitConfiguration[gitconfigkey]['blogtype'] == 'wordpress':
+				self.BlogHandlers[gitconfigkey] = TBlogHandlerWordPress(self, gitconfigkey)
+			else:
+				self.BlogHandlers[gitconfigkey] = TBlogHandlerBlogger(self, gitconfigkey)
+			self.BlogHandlers[gitconfigkey].readGitConfig(GitConfiguration[gitconfigkey])
 
 	#
 	# Function:		readCommandLine
@@ -1079,17 +1308,6 @@ class TGitBlogger:
 
 		if self.options.mode == 'post-receive' and len(self.positionalparameters) == 3:
 			self.options.mode = "commandline"
-
-	#
-	# Function:		XMLText
-	# Description:
-	#
-	def XMLText( self, xmlnode ):
-		ret = ""
-		for node in xmlnode.childNodes:
-			if node.nodeType == node.TEXT_NODE:
-				ret = ret + node.data
-		return ret
 
 	#
 	# Function:		__str__
