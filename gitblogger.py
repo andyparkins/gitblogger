@@ -703,10 +703,15 @@ class TGitBlogger:
 
 		headers = { 'Authorization': 'GoogleLogin auth=%s' % self.authtoken,
 			'GData-Version':'2',
-			'Content-Type':'application/atom+xml;charset=utf-8',
-			}
-		response, content = self.http.request( postURL, 'PUT',
-			headers=headers,body=upload.encode('utf-8') )
+			'Content-Type':'application/atom+xml; charset=utf-8',
+			'Content-Length':'%s' % len(upload.encode('utf-8')) }
+		try:
+			response, content = self.http.request( postURL, 'PUT',
+				headers=headers, body=upload )
+		except:
+			print >> sys.stderr, "gitblogger: exception in following HTML body"
+			print >> sys.stderr, upload.encode('utf-8')
+			raise
 
 		# Check for a redirect
 		while response['status'] == '302':
@@ -760,9 +765,9 @@ class TGitBlogger:
 
 		blog = self.Blogs[targetblog]
 
-		body = body.encode('utf-8')
+#		body = body.encode('utf-8')
 
-		fsize = len(body)
+		fsize = len(body.encode('utf-8'))
 
 		if self.options.verbose:
 			print >> sys.stderr,  "gitblogger: ----- Transmitting to blog", \
@@ -772,11 +777,16 @@ class TGitBlogger:
 
 		headers = { 'Authorization': 'GoogleLogin auth=%s' % self.authtoken,
 			'GData-Version':'2',
-			'Content-Type':'application/atom+xml;charset=utf-8',
+			'Content-Type':'application/atom+xml; charset=utf-8',
 			'Content-Length':'%s' % fsize }
 
-		response, content = self.http.request( blog.PostURL, 'POST',
-			headers=headers, body=body )
+		try:
+			response, content = self.http.request( blog.PostURL, 'POST',
+				headers=headers, body=body )
+		except:
+			print >> sys.stderr, "gitblogger: exception in following HTML body"
+			print >> sys.stderr, body.encode('utf-8')
+			raise
 
 		# Check for a redirect
 		while response['status'] == '302':
