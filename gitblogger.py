@@ -474,7 +474,8 @@ class TGitBlogger:
 					print >> sys.stderr, "gitblogger: Modifying remote post,", postid
 					try:
 						self.modifyPost( mdwn, meta, postid )
-					except:
+					except Exception, e:
+						print >> sys.stderr, "gitblogger: Exception while modifying post,", e
 						break;
 					print >> sys.stderr, "gitblogger: Post modified"
 
@@ -721,7 +722,6 @@ class TGitBlogger:
 
 		if response['status'] != '200':
 			raise TGBError("HTTP Error %s" % (response['status']))
-
 
 
 	#
