@@ -717,6 +717,12 @@ class TBlogHandlerWordPress(TBlogHandlerBase):
 		if meta.date is not None:
 			post.date = meta.date
 
+		print >> sys.stderr, "gitblogger: Modifying %d byte article (ID%d), \"%s\", tags %s" % \
+			(len(html), post.id, post.title, str(post.tags))
+
+		if self.parent.options.verbose:
+			print >> sys.stderr, post.description.encode('utf-8')
+
 		self.wp.editPost(post.id, post, not self.sendasdraft and meta.date is not None )
 
 	#
